@@ -206,6 +206,7 @@ html, body {
   display: flex;
   align-items: center;
   justify-content: space-between;
+  gap: 1px;
 }
 
 .note-context-menu-item.folder-add .folder-add-text {
@@ -387,10 +388,14 @@ html, body {
   border-radius: 8px;
   font-size: 12px;
   color: #0066cc;
+  min-width: 0;
+  width: 100%;
+  box-sizing: border-box;
 }
 
 .thread-indicator-text {
   flex: 1;
+  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -1305,6 +1310,43 @@ html, body {
   /* main-content를 단일 컬럼으로 */
   .main-content {
     grid-template-columns: 1fr !important;
+  }
+  /* 모바일에서 답글 표시기 텍스트가 화면 밖으로 나가지 않도록 */
+  .thread-indicator {
+    max-width: 100% !important;
+    box-sizing: border-box !important;
+  }
+  .thread-indicator-text {
+    min-width: 0 !important;
+    max-width: 100% !important;
+  }
+  .thread-cancel-btn {
+    flex-shrink: 0 !important;
+  }
+  /* 모바일에서 답글 메모 텍스트가 화면 밖으로 나가지 않도록 */
+  .note-wrapper.thread-reply .note-item {
+    max-width: 100% !important;
+    box-sizing: border-box !important;
+  }
+  .note-wrapper[data-thread-depth="1"] .note-item {
+    max-width: calc(100% - 20px) !important;
+  }
+  .note-wrapper[data-thread-depth="2"] .note-item {
+    max-width: calc(100% - 40px) !important;
+  }
+  .note-wrapper[data-thread-depth="3"] .note-item {
+    max-width: calc(100% - 60px) !important;
+  }
+  .note-wrapper[data-thread-depth="4"] .note-item {
+    max-width: calc(100% - 80px) !important;
+  }
+  .note-wrapper[data-thread-depth="5"] .note-item {
+    max-width: calc(100% - 100px) !important;
+  }
+  .note-text {
+    word-break: break-word !important;
+    overflow-wrap: break-word !important;
+    max-width: 100% !important;
   }
 }
 

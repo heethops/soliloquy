@@ -1138,7 +1138,7 @@
       folderText.textContent = '폴더 추가';
       const folderArrow = document.createElement('span');
       folderArrow.className = 'folder-add-arrow';
-      folderArrow.textContent = ' >';
+      folderArrow.textContent = '>';
       folderBtn.appendChild(folderText);
       folderBtn.appendChild(folderArrow);
       

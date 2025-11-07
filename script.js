@@ -805,12 +805,22 @@
             
             // 폴더 실시간 동기화
             if (data.folders && Array.isArray(data.folders)) {
-              console.log('폴더 실시간 동기화 적용:', data.folders.length, '개 폴더');
+              console.log('폴더 실시간 동기화 적용:', data.folders.length, '개 폴더', data.folders);
               isSyncing = true;
               localStorage.setItem(FOLDERS_KEY, JSON.stringify(data.folders));
               isSyncing = false;
               // 폴더 목록이 변경되면 UI 업데이트
               renderFolders();
+            } else if (data.folders === null || data.folders === undefined) {
+              // Firebase에 폴더 필드가 없거나 null인 경우, 로컬 폴더를 Firebase에 저장
+              console.log('Firebase에 folders 필드 없음, 로컬 폴더 확인 중');
+              const localFolders = loadFolders();
+              if (localFolders.length > 0) {
+                console.log('로컬 폴더를 Firebase에 저장:', localFolders.length, '개');
+                syncFoldersToFirebase(localFolders).catch(err => {
+                  console.error('로컬 폴더 Firebase 저장 실패:', err);
+                });
+              }
             }
             
             // 최종 업데이트 시간 표시
@@ -1313,23 +1323,33 @@
             // 서브메뉴를 최신 폴더 목록으로 새로 생성
             const submenu = createSubmenu();
             
-            // 모바일에서 서브메뉴 위치: 폴더 추가 버튼의 오른쪽에 바로 표시
-            const rect = folderBtn.getBoundingClientRect();
-            let left = rect.right + 4;
-            let top = rect.top;
+            // 모바일에서 서브메뉴 위치: 메뉴의 오른쪽 끝에 바로 표시
+            if (!noteContextMenu) {
+              console.error('noteContextMenu가 없습니다');
+              return;
+            }
             
-            // 화면 오른쪽 경계 확인 - 서브메뉴가 화면 밖으로 나가면 왼쪽에 표시
+            const menuRect = noteContextMenu.getBoundingClientRect();
+            const folderBtnRect = folderBtn.getBoundingClientRect();
+            
+            // 메뉴의 오른쪽 끝에 서브메뉴 표시
+            let left = menuRect.right + 4;
+            let top = folderBtnRect.top;
+            
+            // 화면 오른쪽 경계 확인 - 서브메뉴가 화면 밖으로 나가면 메뉴 왼쪽에 표시
             const submenuWidth = 180; // 대략적인 서브메뉴 너비
-            if (left + submenuWidth > window.innerWidth) {
-              left = rect.left - submenuWidth - 4;
+            if (left + submenuWidth > window.innerWidth - 10) {
+              left = menuRect.left - submenuWidth - 4;
               if (left < 10) {
-                left = 10;
+                // 여전히 화면 밖이면 메뉴 아래에 표시
+                left = menuRect.left;
+                top = menuRect.bottom + 4;
               }
             }
             
             // 화면 아래쪽 경계 확인
             const submenuHeight = Math.min(300, submenu.scrollHeight || 300);
-            if (top + submenuHeight > window.innerHeight) {
+            if (top + submenuHeight > window.innerHeight - 10) {
               top = window.innerHeight - submenuHeight - 10;
             }
             
@@ -1348,9 +1368,14 @@
             submenuVisible = true;
             
             console.log('서브메뉴 표시:', {
-              left: submenu.style.left,
-              top: submenu.style.top,
-              display: submenu.style.display,
+              menuLeft: menuRect.left,
+              menuRight: menuRect.right,
+              menuTop: menuRect.top,
+              menuBottom: menuRect.bottom,
+              folderBtnTop: folderBtnRect.top,
+              submenuLeft: left,
+              submenuTop: top,
+              windowWidth: window.innerWidth,
               items: submenu.children.length
             });
             

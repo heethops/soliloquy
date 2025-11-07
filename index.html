@@ -1,0 +1,207 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>메모 타임스탬프</title>
+  <link rel="stylesheet" href="styles.css">
+  <!-- Firebase SDK -->
+  <script type="module">
+    // Import the functions you need from the SDKs you need
+    import { initializeApp } from "https://www.gstatic.com/firebasejs/12.5.0/firebase-app.js";
+    import { getFirestore, doc, setDoc, getDoc, onSnapshot, deleteDoc } from "https://www.gstatic.com/firebasejs/12.5.0/firebase-firestore.js";
+    
+    // Your web app's Firebase configuration
+    const firebaseConfig = {
+      apiKey: "AIzaSyDvKloMdND9HumLOJnmbWjUkjOJWOl7KGY",
+      authDomain: "soliloquy-hee.firebaseapp.com",
+      projectId: "soliloquy-hee",
+      storageBucket: "soliloquy-hee.firebasestorage.app",
+      messagingSenderId: "902327259649",
+      appId: "1:902327259649:web:c6029ac400e587312da600",
+      measurementId: "G-H6JEP00G6W"
+    };
+    
+    try {
+      // Initialize Firebase
+      const app = initializeApp(firebaseConfig);
+      const db = getFirestore(app);
+      
+      // 전역으로 사용할 수 있도록 설정
+      window.firebaseDb = db;
+      window.firebaseDoc = doc;
+      window.firebaseSetDoc = setDoc;
+      window.firebaseGetDoc = getDoc;
+      window.firebaseOnSnapshot = onSnapshot;
+      window.firebaseDeleteDoc = deleteDoc;
+      window.firebaseReady = true;
+      
+      console.log('Firebase 초기화 완료');
+      
+      // Firebase 준비 이벤트 발생
+      window.dispatchEvent(new Event('firebase-ready'));
+    } catch (error) {
+      console.error('Firebase 초기화 실패:', error);
+      window.firebaseReady = false;
+    }
+  </script>
+</head>
+<body>
+  <header class="main-header">
+    <button id="change-user-id-btn" class="change-user-id-btn" type="button">다른 ID</button>
+  </header>
+  <main class="container">
+    <h1 class="visually-hidden">메모 타임스탬프 앱</h1>
+    <div class="main-content">
+      <aside class="profile-section">
+        <div class="profile-wrapper">
+          <div class="profile-image">
+            <img id="profile-img" src="" alt="프로필 사진" style="display: none;" />
+            <div class="profile-image-placeholder">프로필 사진</div>
+            <div id="profile-image-menu" class="profile-image-menu">
+              <button type="button" class="profile-image-menu-item" id="profile-image-add">사진 추가</button>
+              <button type="button" class="profile-image-menu-item delete" id="profile-image-delete">사진 삭제</button>
+            </div>
+            <input id="profile-image-input" type="file" accept="image/*" style="display: none;" />
+          </div>
+          <div class="profile-name">
+            <input id="profile-name-input" class="profile-name-input" type="text" placeholder="이름을 입력하세요..." />
+          </div>
+          <div id="profile-user-id" class="profile-user-id"></div>
+          <div class="profile-bio">
+            <textarea id="profile-bio-input" class="profile-bio-input" placeholder="소개를 입력하세요..." rows="1"></textarea>
+          </div>
+        </div>
+      </aside>
+
+      <div class="notes-section">
+        <section class="composer" aria-labelledby="composer-label">
+          <label id="composer-label" class="visually-hidden" for="note-input">글 작성</label>
+          <div class="input-container">
+            <textarea id="note-input" class="note-input" placeholder="여기에 글을 쓰세요..." rows="3"></textarea>
+            <div id="upload-preview" class="upload-preview" style="display:none"></div>
+            <div id="thread-indicator" class="thread-indicator" style="display: none;">
+              <span class="thread-indicator-text"></span>
+              <button id="cancel-thread" class="thread-cancel-btn" type="button">취소</button>
+            </div>
+          </div>
+          <div class="actions">
+            <input id="file-input" type="file" accept="image/*" multiple style="display:none" />
+            <button id="upload-btn" class="btn btn-icon" type="button" aria-label="사진 첨부">
+              <img src="photo-icon.svg" alt="사진" style="width: 16px; height: 16px;" />
+            </button>
+            <button id="submit-btn" class="submit-btn" type="button" aria-label="전송">
+              <img src="send-icon.svg" alt="전송" style="width: 16px; height: 16px;" />
+            </button>
+          </div>
+        </section>
+
+        <section class="list" aria-labelledby="list-label">
+          <h2 id="list-label" class="visually-hidden">저장된 글 목록</h2>
+          <div id="filter-info" class="filter-info"></div>
+          <ul id="notes" class="notes" aria-live="polite"></ul>
+        </section>
+      </div>
+
+      <aside class="calendar-section">
+        <div class="calendar-wrapper">
+          <div class="calendar-header">
+            <button id="prev-month" class="btn-nav" type="button">‹</button>
+            <span id="calendar-title" class="calendar-title"></span>
+            <button id="next-month" class="btn-nav" type="button">›</button>
+          </div>
+          <div id="calendar" class="calendar"></div>
+          <button id="clear-filter" class="btn-clear-filter" type="button" style="display: none;">필터 해제</button>
+        </div>
+
+        <div class="search-bar">
+          <div class="search-input-wrapper">
+            <input id="search-input" class="search-input" type="text" placeholder="검색어 입력" />
+            <button id="search-btn" class="btn-search-icon" type="button" aria-label="검색">
+              <img id="search-icon" src="search-icon.svg" alt="검색" style="display: block; width: 16px; height: 16px;" />
+              <img id="close-icon" src="close-icon.svg" alt="닫기" style="display: none; width: 16px; height: 16px;" />
+            </button>
+          </div>
+        </div>
+
+        <div class="calendar-actions">
+          <button id="toggle-transparency" class="btn" type="button">투명</button>
+          <button id="toggle-date" class="btn" type="button">날짜</button>
+          <button id="reset-btn" class="btn" type="button">초기화</button>
+          <button id="restore-btn" class="btn" type="button" style="display: none;">복원</button>
+          <button id="final-delete-btn" class="btn btn-delete" type="button" style="display: none;">진짜끝</button>
+          <span id="total-notes-count" class="total-notes-count"></span>
+        </div>
+
+        <div class="bulk-actions" aria-label="일괄 작업">
+          <button id="toggle-selection" class="btn" type="button">선택</button>
+          <button id="select-all-btn" class="btn bulk-controls" type="button">전체</button>
+          <button id="bulk-edit" class="btn bulk-controls" type="button">수정</button>
+          <button id="bulk-delete" class="btn btn-delete bulk-controls" type="button">삭제</button>
+        </div>
+
+        <div class="folder-section">
+          <div class="folder-header">
+            <button id="toggle-folder" class="btn" type="button">폴더</button>
+            <div class="folder-controls" style="display: none;">
+              <button id="folder-add" class="btn" type="button">추가</button>
+              <button id="folder-edit" class="btn" type="button">수정</button>
+              <button id="folder-remove" class="btn" type="button">해제</button>
+              <button id="folder-delete" class="btn btn-delete" type="button">삭제</button>
+            </div>
+          </div>
+          <div id="folder-list" class="folder-list" style="display: none;"></div>
+        </div>
+      </aside>
+    </div>
+  </main>
+
+  <div id="image-modal" class="image-modal" role="dialog" aria-modal="true" aria-label="이미지 보기">
+    <button id="image-modal-close" class="image-modal-close" type="button">닫기</button>
+    <button id="image-modal-prev" class="image-modal-nav image-modal-prev" type="button" aria-label="이전 이미지">‹</button>
+    <button id="image-modal-next" class="image-modal-nav image-modal-next" type="button" aria-label="다음 이미지">›</button>
+    <div class="image-modal-content">
+      <img id="image-modal-img" alt="전체 이미지" />
+    </div>
+  </div>
+
+  <div id="toast" class="toast" style="display: none;"></div>
+
+  <div id="reset-confirm-modal" class="reset-confirm-modal" style="display: none;">
+    <div class="reset-confirm-content">
+      <p>정말 초기화하시겠습니까?</p>
+      <div class="reset-confirm-buttons">
+        <button id="reset-confirm-yes" class="btn" type="button">네</button>
+        <button id="reset-confirm-no" class="btn btn-cancel" type="button">아니요</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="user-id-modal" class="user-id-modal" style="display: none;">
+    <div class="user-id-content">
+      <h2>사용자 ID 변경</h2>
+      <p>동기화를 위해 사용자 ID를 입력해주세요.</p>
+      <input id="user-id-input" type="text" placeholder="사용자 ID 입력" maxlength="50" />
+      <div class="user-id-buttons">
+        <button id="user-id-cancel" class="btn btn-cancel" type="button">취소</button>
+        <button id="user-id-submit" class="btn" type="button">확인</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="account-switch-modal" class="account-switch-modal" style="display: none;">
+    <div class="account-switch-content">
+      <h2>계정 전환</h2>
+      <p>이미 존재하는 ID입니다. 계정을 전환하시겠습니까?</p>
+      <div class="account-switch-buttons">
+        <button id="account-switch-cancel" class="btn btn-cancel" type="button">취소</button>
+        <button id="account-switch-confirm" class="btn" type="button">전환</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="script.js"></script>
+</body>
+</html>
+
+

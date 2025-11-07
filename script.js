@@ -731,7 +731,7 @@
       return null;
     }
 
-    // Firebase 동기화 업데이트 확인 (quota 절약: 120초마다 수동 확인, 실시간 리스너 사용 안 함)
+    // Firebase 동기화 업데이트 확인 (다른 기기/Firebase 콘솔에서 변경사항 감지)
     async function checkFirebaseUpdates() {
       if (!isFirebaseEnabled() || isSyncing) {
         return;
@@ -766,15 +766,25 @@
       }
     }
 
-    // Firebase 동기화 시작 (주기적 동기화 제거됨 - 변경 이벤트 발생 시에만 동기화)
+    // Firebase 동기화 시작 (다른 기기/Firebase 콘솔에서 변경사항 확인)
     function startFirebaseSync() {
-      // 주기적 동기화 제거됨 - 변경 이벤트 발생 시에만 동기화
-      // 이 함수는 호환성을 위해 유지하지만 실제로는 아무것도 하지 않음
+      if (!isFirebaseEnabled()) {
+        return;
+      }
+
+      // 이미 폴링이 실행 중이면 다시 시작하지 않음
+      if (firebaseSyncInterval) {
+        return;
+      }
+
+      // 30초마다 업데이트 확인 (다른 기기/Firebase 콘솔에서 변경사항 감지)
+      firebaseSyncInterval = setInterval(() => {
+        checkFirebaseUpdates();
+      }, 30000); // 30초마다 확인
     }
 
     // Firebase 동기화 중지
     function stopFirebaseSync() {
-      // 주기적 동기화가 없으므로 중지할 것도 없음
       if (firebaseSyncInterval) {
         clearInterval(firebaseSyncInterval);
         firebaseSyncInterval = null;
@@ -3231,7 +3241,8 @@
             renderList(cloudNotes);
           }
         }
-        // 주기적 동기화 제거 - 변경 이벤트 발생 시에만 동기화
+        // 다른 기기/Firebase 콘솔에서 변경사항 확인 시작 (30초마다)
+        startFirebaseSync();
       }).catch((error) => {
         console.error('Firebase 동기화 오류:', error);
         showToast('동기화 오류: ' + error.message);

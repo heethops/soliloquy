@@ -37,7 +37,9 @@
     /** @type {HTMLButtonElement|null} */
     const nextMonthBtn = document.getElementById('next-month');
     /** @type {HTMLButtonElement|null} */
-    const changeUserIdBtn = document.getElementById('change-user-id-btn');
+    const changeUserIdBtn = null; // 제거됨
+    /** @type {HTMLElement|null} */
+    const lastUpdatedEl = document.getElementById('last-updated');
     /** @type {HTMLButtonElement|null} */
     const clearFilterBtn = document.getElementById('clear-filter');
     /** @type {HTMLElement|null} */
@@ -118,15 +120,7 @@
     /** @type {HTMLButtonElement|null} */
     const userIdSubmitBtn = document.getElementById('user-id-submit');
     /** @type {HTMLButtonElement|null} */
-    const userIdCancelBtn = document.getElementById('user-id-cancel');
-    /** @type {HTMLElement|null} */
-    const profileUserIdEl = document.getElementById('profile-user-id');
-    /** @type {HTMLElement|null} */
-    const accountSwitchModal = document.getElementById('account-switch-modal');
-    /** @type {HTMLButtonElement|null} */
-    const accountSwitchCancelBtn = document.getElementById('account-switch-cancel');
-    /** @type {HTMLButtonElement|null} */
-    const accountSwitchConfirmBtn = document.getElementById('account-switch-confirm');
+    const userIdSkipBtn = document.getElementById('user-id-skip');
 
     if (!input || !submitBtn || !list) {
       console.error('필수 요소를 찾을 수 없습니다', { input: !!input, submitBtn: !!submitBtn, list: !!list });
@@ -213,80 +207,59 @@
       currentImageIndex = -1;
     }
 
-    // 사용자 ID 생성 또는 로드 - 모든 기기에서 동일한 고정 ID 사용
+    // 사용자 ID - 모든 사용자가 자동으로 같은 ID 사용
+    const USER_ID_KEY = 'soliloquy_user_id';
+    const DEFAULT_USER_ID = 'soliloquy-default-user'; // 모든 사용자가 공유하는 고정 ID
+    
     function getUserId() {
-      // localStorage에서 사용자 ID 가져오기
-      const userId = localStorage.getItem('sync_user_id');
-      if (userId) {
-        return userId;
-      }
-      // ID가 없으면 null 반환 (모달 표시 필요)
-      return null;
+      // 항상 같은 고정 ID 반환 (모든 사용자가 같은 데이터 공유)
+      return DEFAULT_USER_ID;
     }
     
     function setUserId(userId) {
-      if (userId && userId.trim()) {
-        localStorage.setItem('sync_user_id', userId.trim());
-        return true;
-      }
-      return false;
+      // 더 이상 사용하지 않음 (고정 ID 사용)
     }
     
+    // 사용자 ID 모달 함수들 제거됨 (자동으로 고정 ID 사용)
     function showUserIdModal() {
-      if (userIdModal && userIdInput && userIdSubmitBtn && userIdCancelBtn) {
-        userIdModal.style.display = 'flex';
-        // 현재 사용자 ID가 있으면 표시
-        const currentUserId = getUserId();
-        userIdInput.value = currentUserId || '';
-        userIdInput.focus();
-        userIdInput.select();
-        
-        // Enter 키로 제출 (keydown 사용 - 더 확실함)
-        userIdInput.onkeydown = function(e) {
-          if (e.key === 'Enter') {
-            e.preventDefault();
-            submitUserId();
-          }
-        };
-        
-        // 확인 버튼 클릭
-        userIdSubmitBtn.onclick = submitUserId;
-        
-        // 취소 버튼 클릭
-        userIdCancelBtn.onclick = hideUserIdModal;
-        
-        // 모달 외부 클릭 시 닫기
-        userIdModal.onclick = function(e) {
-          if (e.target === userIdModal) {
-            hideUserIdModal();
-          }
-        };
-      }
+      // 더 이상 사용하지 않음
     }
     
     function hideUserIdModal() {
-      if (userIdModal) {
-        userIdModal.style.display = 'none';
+      // 더 이상 사용하지 않음
+    }
+    
+    function submitUserId() {
+      // 더 이상 사용하지 않음
+    }
+    
+    // 토큰 입력창 표시/숨김 제어 함수
+    function toggleTokenInput(show) {
+      if (githubTokenInput) {
+        githubTokenInput.style.display = show ? 'block' : 'none';
+      }
+      if (githubTokenLabel) {
+        githubTokenLabel.style.display = show ? 'block' : 'none';
+      }
+      if (userIdHelp) {
+        userIdHelp.style.display = show ? 'block' : 'none';
       }
     }
     
+    
     // 사용자 ID 변경 (Firebase 데이터 마이그레이션)
     async function migrateUserId(oldUserId, newUserId) {
-      if (!isFirebaseEnabled()) {
-        console.log('Firebase 미설정, 마이그레이션 건너뜀');
-        return false;
-      }
+      // GitHub Gist는 사용자 ID 기반이므로 마이그레이션 불필요
+      // Gist ID는 사용자 ID와 무관하게 동작
+      return false;
       
       try {
-        console.log('사용자 ID 마이그레이션 시작:', oldUserId, '->', newUserId);
-        
         // 기존 ID의 데이터 가져오기
         const oldDoc = window.firebaseDoc(window.firebaseDb, 'users', oldUserId);
         const oldSnap = await window.firebaseGetDoc(oldDoc);
         
         if (oldSnap.exists()) {
           const oldData = oldSnap.data();
-          console.log('기존 데이터 발견:', oldData);
           
           // 새로운 ID로 데이터 복사
           const newDoc = window.firebaseDoc(window.firebaseDb, 'users', newUserId);
@@ -294,11 +267,6 @@
             ...oldData,
             lastUpdated: new Date().toISOString()
           });
-          console.log('새 ID로 데이터 복사 완료');
-          
-          // 기존 ID 문서 삭제
-          await window.firebaseDeleteDoc(oldDoc);
-          console.log('기존 ID 문서 삭제 완료');
           
           // 로컬 스토리지도 업데이트
           if (oldData.notes && Array.isArray(oldData.notes)) {
@@ -318,10 +286,39 @@
             }
           }
           
+          // 기존 ID 문서의 모든 데이터 삭제하고 migratedTo만 남김 (다른 기기에서 자동 변경 감지를 위해)
+          // 기존 문서를 삭제하고 migratedTo만 있는 새 문서 생성
+          await window.firebaseDeleteDoc(oldDoc);
+          await window.firebaseSetDoc(oldDoc, {
+            migratedTo: newUserId,
+            migrationTime: new Date().toISOString()
+          });
+          
           return true;
         } else {
-          console.log('기존 ID에 데이터 없음, 마이그레이션 불필요');
-          return true; // 데이터가 없어도 성공으로 처리
+          // 기존 ID 문서에 migratedTo 필드만 추가 (다른 기기에서 자동 변경을 위해)
+          await window.firebaseSetDoc(oldDoc, {
+            migratedTo: newUserId,
+            migrationTime: new Date().toISOString()
+          });
+          
+          // 로컬 데이터를 새 ID로 Firebase에 저장
+          const localNotes = loadNotes();
+          const localFolders = loadFolders();
+          if (localNotes.length > 0 || localFolders.length > 0) {
+            const newDoc = window.firebaseDoc(window.firebaseDb, 'users', newUserId);
+            const newData = {
+              notes: localNotes,
+              folders: localFolders,
+              profileBio: localStorage.getItem(PROFILE_BIO_KEY) || '',
+              profileName: localStorage.getItem(PROFILE_NAME_KEY) || '',
+              profileImage: localStorage.getItem(PROFILE_IMAGE_KEY) || null,
+              lastUpdated: new Date().toISOString()
+            };
+            await window.firebaseSetDoc(newDoc, newData);
+          }
+          
+          return true;
         }
       } catch (error) {
         console.error('사용자 ID 마이그레이션 실패:', error);
@@ -329,156 +326,31 @@
       }
     }
     
+    // 사용자 ID 제출 함수 제거됨
     function submitUserId() {
-      if (!userIdInput) return;
-      const userId = userIdInput.value.trim();
-      if (!userId) {
-        alert('사용자 ID를 입력해주세요.');
-        return;
-      }
-      
-      const oldUserId = getUserId();
-      
-      if (oldUserId === userId) {
-        // 같은 ID면 변경 불필요
-        hideUserIdModal();
-        return;
-      }
-      
-      // Firebase에서 새 ID가 이미 존재하는지 확인
-      if (isFirebaseEnabled() && oldUserId) {
-        const newDoc = window.firebaseDoc(window.firebaseDb, 'users', userId);
-        window.firebaseGetDoc(newDoc).then((docSnap) => {
-          if (docSnap.exists()) {
-            // 새 ID가 이미 존재하면 확인 모달 표시
-            console.log('기존 계정 발견, 확인 모달 표시:', userId);
-            showAccountSwitchModal(userId);
-          } else {
-            // 새 ID가 없으면 데이터 마이그레이션
-            console.log('새 ID 없음, 데이터 마이그레이션:', oldUserId, '->', userId);
-            migrateUserId(oldUserId, userId).then((success) => {
-              if (success) {
-                setUserId(userId);
-                hideUserIdModal();
-                updateProfileUserId();
-                
-                // 프로필 정보 UI 업데이트
-                loadProfileImage();
-                updateProfileBio();
-                if (profileNameInput) {
-                  const name = loadProfileName();
-                  profileNameInput.value = name;
-                }
-                
-                // 기존 실시간 동기화 구독 해제
-                if (syncUnsubscribe) {
-                  syncUnsubscribe();
-                  syncUnsubscribe = null;
-                }
-                
-                // 새로운 ID로 Firebase 동기화 시작
-                if (window.firebaseReady) {
-                  initFirebaseSync();
-                } else {
-                  window.addEventListener('firebase-ready', initFirebaseSync);
-                }
-                
-                showToast('사용자 ID가 변경되었습니다.');
-              } else {
-                alert('사용자 ID 변경에 실패했습니다. 다시 시도해주세요.');
-              }
-            });
-          }
-        }).catch((error) => {
-          console.error('ID 확인 실패:', error);
-          alert('ID 확인 중 오류가 발생했습니다. 다시 시도해주세요.');
-        });
-      } else {
-        // Firebase가 없거나 기존 ID가 없으면 그냥 설정
-        setUserId(userId);
-        hideUserIdModal();
-        updateProfileUserId();
-        
-        if (isFirebaseEnabled()) {
-          if (window.firebaseReady) {
-            initFirebaseSync();
-          } else {
-            window.addEventListener('firebase-ready', initFirebaseSync);
-          }
-        } else {
-          renderList(loadNotes());
-        }
-        
-        showToast('사용자 ID가 설정되었습니다.');
-      }
+      // UI 제거됨
     }
     
-    // 계정 전환 확인 모달 표시
+    // 계정 전환 모달 함수들 제거됨
     function showAccountSwitchModal(newUserId) {
-      if (accountSwitchModal && accountSwitchCancelBtn && accountSwitchConfirmBtn) {
-        accountSwitchModal.style.display = 'flex';
-        
-        // 취소 버튼 클릭
-        accountSwitchCancelBtn.onclick = function() {
-          hideAccountSwitchModal();
-        };
-        
-        // 전환 버튼 클릭
-        accountSwitchConfirmBtn.onclick = function() {
-          performAccountSwitch(newUserId);
-        };
-        
-        // 모달 외부 클릭 시 닫기
-        accountSwitchModal.onclick = function(e) {
-          if (e.target === accountSwitchModal) {
-            hideAccountSwitchModal();
-          }
-        };
-      }
+      // UI 제거됨
     }
     
-    // 계정 전환 확인 모달 숨기기
     function hideAccountSwitchModal() {
-      if (accountSwitchModal) {
-        accountSwitchModal.style.display = 'none';
-      }
+      // UI 제거됨
     }
     
-    // 계정 전환 실행
     function performAccountSwitch(userId) {
-      hideAccountSwitchModal();
-      hideUserIdModal();
-      
-      setUserId(userId);
-      updateProfileUserId();
-      
-      // 기존 실시간 동기화 구독 해제
-      if (syncUnsubscribe) {
-        syncUnsubscribe();
-        syncUnsubscribe = null;
-      }
-      
-      // 새로운 ID의 Firebase 데이터 로드 및 동기화 시작
-      if (window.firebaseReady) {
-        initFirebaseSync();
-      } else {
-        window.addEventListener('firebase-ready', initFirebaseSync);
-      }
-      
-      showToast('계정이 전환되었습니다.');
+      // UI 제거됨
     }
 
     // 두 사용자 데이터 합치기
     async function mergeUsers(userId1, userId2) {
-      if (!isFirebaseEnabled()) {
-        console.error('Firebase가 설정되지 않았습니다.');
-        return;
-      }
+      // GitHub Gist는 사용자 ID 기반이 아니므로 병합 불필요
+      console.warn('GitHub Gist에서는 사용자 병합이 지원되지 않습니다.');
+      return;
       
       try {
-        console.log('사용자 데이터 합치기 시작...');
-        console.log('사용자 1:', userId1);
-        console.log('사용자 2:', userId2);
         
         // 두 사용자의 데이터 가져오기
         const doc1 = window.firebaseDoc(window.firebaseDb, 'users', userId1);
@@ -490,8 +362,6 @@
         const notes1 = snap1.exists() && snap1.data().notes ? snap1.data().notes : [];
         const notes2 = snap2.exists() && snap2.data().notes ? snap2.data().notes : [];
         
-        console.log('사용자 1 노트:', notes1.length, '개');
-        console.log('사용자 2 노트:', notes2.length, '개');
         
         // 중복 제거 (id 기준)
         const mergedNotes = [];
@@ -516,28 +386,12 @@
         // 생성 시간 순으로 정렬
         mergedNotes.sort((a, b) => new Date(a.createdAt) - new Date(b.createdAt));
         
-        console.log('합쳐진 노트:', mergedNotes.length, '개');
-        
-        // 현재 사용자 ID로 저장
-        const currentUserId = getUserId();
-        if (!currentUserId) {
-          console.error('사용자 ID가 설정되지 않았습니다.');
-          alert('사용자 ID를 먼저 설정해주세요.');
-          return;
-        }
-        const currentDoc = window.firebaseDoc(window.firebaseDb, 'users', currentUserId);
-        await window.firebaseSetDoc(currentDoc, {
-          notes: mergedNotes,
-          lastUpdated: new Date().toISOString()
-        }, { merge: true });
-        
-        // 로컬 저장소에도 저장
+        // 로컬 저장소에 저장
         localStorage.setItem(STORAGE_KEY, JSON.stringify(mergedNotes));
         
         // 화면 업데이트
         renderList(mergedNotes);
         
-        console.log('사용자 데이터 합치기 완료!');
         showToast(`두 사용자 데이터를 합쳤습니다. 총 ${mergedNotes.length}개의 노트가 있습니다.`);
         
         return mergedNotes;
@@ -549,32 +403,458 @@
     
     // 전역 함수로 등록 (콘솔에서 사용 가능)
     window.mergeUsers = mergeUsers;
-    window.getCurrentUserId = getUserId;
+    // 사용자 ID 관련 전역 함수 제거됨
     
-    // 모든 사용자 ID 찾기 (Firebase에서)
+    // 모든 사용자 ID 찾기 함수 제거됨
     async function findAllUserIds() {
-      if (!isFirebaseEnabled()) {
-        console.error('Firebase가 설정되지 않았습니다.');
-        return [];
-      }
-      
-      // 참고: Firestore에서 모든 문서를 가져오려면 collection을 쿼리해야 하지만,
-      // 보안 규칙상 users 컬렉션의 모든 문서를 읽을 수 없을 수 있습니다.
-      // 대신 사용자가 직접 userId를 알려주거나, 콘솔에서 확인하도록 안내합니다.
-      console.log('현재 사용자 ID:', getUserId());
-      console.log('다른 사용자 ID는 Firebase 콘솔 > Firestore Database > 데이터 탭에서 확인하세요.');
-      return [getUserId()];
+      // 사용자 ID 기능 제거됨
+      return [];
     }
     
     window.findAllUserIds = findAllUserIds;
 
     // Firebase 동기화 활성화 여부 확인
     function isFirebaseEnabled() {
-      return window.firebaseDb && window.firebaseDoc && window.firebaseSetDoc && window.firebaseGetDoc && window.firebaseOnSnapshot && window.firebaseDeleteDoc;
+      return window.firebaseReady && window.firebaseDb;
+      // 사용자 ID는 항상 고정 ID이므로 체크 불필요
     }
 
-    let syncUnsubscribe = null;
     let isSyncing = false;
+    let syncTimeout = null; // 디바운싱을 위한 타이머 (5초 이상으로 설정하여 quota 절약)
+    let lastSyncedData = null; // 마지막으로 동기화한 데이터 (중복 방지)
+    let firebaseSyncInterval = null; // Firebase 수동 동기화 인터벌 (실시간 리스너 대신 사용하여 quota 절약)
+
+    // Firebase에 데이터 저장 (quota 절약: 디바운싱 10초, 데이터 변경 시에만 저장)
+    async function syncToFirebase(notes) {
+      if (!isFirebaseEnabled()) {
+        console.warn('Firebase 동기화가 활성화되지 않았습니다.');
+        return;
+      }
+
+      const userId = getUserId(); // 고정 ID 사용
+
+      console.log('Firebase에 동기화 시작...', {
+        notesCount: notes.length,
+        userId: userId
+      });
+
+      try {
+        // 데이터가 실제로 변경되었는지 확인 (quota 절약)
+        const folders = loadFolders();
+        const profileData = {
+          notes: notes,
+          folders: folders,
+          profileBio: localStorage.getItem(PROFILE_BIO_KEY) || '',
+          profileName: localStorage.getItem(PROFILE_NAME_KEY) || '',
+          profileImage: localStorage.getItem(PROFILE_IMAGE_KEY) || '',
+          lastUpdated: new Date().toISOString()
+        };
+        
+        const dataStr = JSON.stringify(profileData);
+        if (lastSyncedData === dataStr) {
+          // 데이터가 변경되지 않았으면 동기화하지 않음 (quota 절약)
+          console.log('데이터 변경 없음, 동기화 스킵');
+          return;
+        }
+
+        isSyncing = true;
+        
+        const userDoc = window.firebaseDoc(window.firebaseDb, 'users', userId);
+        await window.firebaseSetDoc(userDoc, profileData, { merge: true });
+
+        // 동기화 성공 시 마지막 동기화 데이터 저장
+        lastSyncedData = dataStr;
+        localStorage.setItem('firebase_last_updated', new Date().toISOString());
+        console.log('Firebase 동기화 성공');
+      } catch (error) {
+        console.error('Firebase 동기화 실패:', error);
+        showToast('동기화 실패: ' + error.message);
+      } finally {
+        isSyncing = false;
+      }
+    }
+
+    // GitHub Gist에 데이터 저장 (레거시 함수, 호환성 유지)
+    async function syncToGitHub(notes) {
+      if (!isGitHubEnabled()) {
+        console.warn('GitHub 동기화가 활성화되지 않았습니다.');
+        return;
+      }
+
+      console.log('GitHub에 동기화 시작...', {
+        notesCount: notes.length,
+        hasGistId: !!window.githubSync.gistId
+      });
+
+      try {
+        // 데이터가 실제로 변경되었는지 확인
+        const folders = loadFolders();
+        const profileData = {
+          notes: notes,
+          folders: folders,
+          profileBio: localStorage.getItem(PROFILE_BIO_KEY) || '',
+          profileName: localStorage.getItem(PROFILE_NAME_KEY) || '',
+          profileImage: localStorage.getItem(PROFILE_IMAGE_KEY) || '',
+          lastUpdated: new Date().toISOString()
+        };
+        
+        const dataStr = JSON.stringify(profileData);
+        if (lastSyncedData === dataStr) {
+          // 데이터가 변경되지 않았으면 동기화하지 않음
+          console.log('데이터 변경 없음, 동기화 스킵');
+          return;
+        }
+
+        isSyncing = true;
+        const content = JSON.stringify(profileData, null, 2);
+        
+        const gistData = {
+          description: 'Soliloquy 메모 데이터',
+          public: false, // 비공개 Gist
+          files: {
+            [window.githubSync.fileName]: {
+              content: content
+            }
+          }
+        };
+
+        if (window.githubSync.gistId) {
+          // 기존 Gist 업데이트
+          console.log('기존 Gist 업데이트 중...', window.githubSync.gistId);
+          await githubApiCall(`/gists/${window.githubSync.gistId}`, 'PATCH', gistData);
+          console.log('Gist 업데이트 완료');
+        } else {
+          // 새 Gist 생성
+          console.log('새 Gist 생성 중...');
+          const result = await githubApiCall('/gists', 'POST', gistData);
+          window.githubSync.gistId = result.id;
+          localStorage.setItem('github_gist_id', result.id);
+          console.log('Gist 생성 완료:', result.id);
+        }
+
+        // 동기화 성공 시 마지막 동기화 데이터 저장
+        lastSyncedData = dataStr;
+        localStorage.setItem('github_last_updated', new Date().toISOString());
+        console.log('GitHub 동기화 성공');
+      } catch (error) {
+        console.error('GitHub 동기화 실패:', error);
+        if (error.message?.includes('Bad credentials') || error.message?.includes('401')) {
+          console.warn('GitHub 토큰이 유효하지 않습니다. 토큰을 다시 입력하세요.');
+          showToast('GitHub 토큰이 유효하지 않습니다.');
+        } else if (error.message?.includes('rate limit')) {
+          showToast('API 호출 제한에 도달했습니다. 잠시 후 다시 시도해주세요.');
+        } else if (error.message?.includes('권한') || error.message?.includes('403')) {
+          // 403 오류 시 Gist ID 초기화하고 새로 생성 시도
+          console.warn('Gist 권한 오류. Gist ID를 초기화하고 새로 생성합니다.');
+          localStorage.removeItem('github_gist_id');
+          window.githubSync.gistId = null;
+          
+          // 새 Gist 생성 시도
+          try {
+            const folders = loadFolders();
+            const profileData = {
+              notes: notes,
+              folders: folders,
+              profileBio: localStorage.getItem(PROFILE_BIO_KEY) || '',
+              profileName: localStorage.getItem(PROFILE_NAME_KEY) || '',
+              profileImage: localStorage.getItem(PROFILE_IMAGE_KEY) || '',
+              lastUpdated: new Date().toISOString()
+            };
+            const content = JSON.stringify(profileData, null, 2);
+            const gistData = {
+              description: 'Soliloquy 메모 데이터',
+              public: false,
+              files: {
+                [window.githubSync.fileName]: {
+                  content: content
+                }
+              }
+            };
+            const result = await githubApiCall('/gists', 'POST', gistData);
+            window.githubSync.gistId = result.id;
+            localStorage.setItem('github_gist_id', result.id);
+            localStorage.setItem('github_last_updated', new Date().toISOString());
+            lastSyncedData = JSON.stringify(profileData);
+            console.log('새 Gist 생성 완료:', result.id);
+            showToast('새 Gist가 생성되었습니다.');
+          } catch (retryError) {
+            console.error('Gist 재생성 실패:', retryError);
+            showToast('토큰 권한이 없습니다. GitHub에서 토큰 생성 시 "gist" 권한을 체크해주세요.');
+          }
+        } else {
+          showToast('동기화 실패: ' + error.message);
+        }
+      } finally {
+        isSyncing = false;
+      }
+    }
+
+    // Firebase에서 데이터 읽기 (quota 절약: 수동 동기화만 사용)
+    async function syncFromFirebase() {
+      if (!isFirebaseEnabled()) {
+        return null;
+      }
+
+      const userId = getUserId(); // 고정 ID 사용
+
+      try {
+        const userDoc = window.firebaseDoc(window.firebaseDb, 'users', userId);
+        const docSnap = await window.firebaseGetDoc(userDoc);
+        
+        if (!docSnap.exists()) {
+          return null;
+        }
+
+        const data = docSnap.data();
+
+        // 프로필 정보 동기화
+        if (data.profileBio !== undefined) {
+          localStorage.setItem(PROFILE_BIO_KEY, data.profileBio || '');
+        }
+        if (data.profileName !== undefined) {
+          localStorage.setItem(PROFILE_NAME_KEY, data.profileName || '');
+        }
+        if (data.profileImage !== undefined) {
+          if (data.profileImage) {
+            localStorage.setItem(PROFILE_IMAGE_KEY, data.profileImage);
+          } else {
+            localStorage.removeItem(PROFILE_IMAGE_KEY);
+          }
+        }
+
+        // 폴더 동기화
+        if (data.folders && Array.isArray(data.folders) && data.folders.length > 0) {
+          isSyncing = true;
+          localStorage.setItem(FOLDERS_KEY, JSON.stringify(data.folders));
+          isSyncing = false;
+          renderFolders();
+        }
+
+        // 최종 업데이트 시간 표시
+        if (data.lastUpdated) {
+          updateLastUpdatedTime(data.lastUpdated);
+          localStorage.setItem('firebase_last_updated', data.lastUpdated);
+        }
+
+        if (data.notes && Array.isArray(data.notes)) {
+          isSyncing = true;
+          localStorage.setItem(STORAGE_KEY, JSON.stringify(data.notes));
+          isSyncing = false;
+          return data.notes;
+        }
+      } catch (error) {
+        console.error('Firebase에서 동기화 실패:', error);
+      }
+      return null;
+    }
+
+    // GitHub Gist에서 데이터 읽기
+    async function syncFromGitHub() {
+      if (!isGitHubEnabled()) {
+        return null;
+      }
+
+      if (!window.githubSync.gistId) {
+        // 저장된 Gist ID 확인
+        const savedGistId = localStorage.getItem('github_gist_id');
+        if (savedGistId) {
+          window.githubSync.gistId = savedGistId;
+        } else {
+          return null; // Gist가 없음
+        }
+      }
+
+      try {
+        const gist = await githubApiCall(`/gists/${window.githubSync.gistId}`);
+        const file = gist.files[window.githubSync.fileName];
+        
+        if (!file) {
+          return null;
+        }
+
+        // 파일 내용 파싱
+        const data = JSON.parse(file.content);
+
+        // 프로필 정보 동기화
+        if (data.profileBio !== undefined) {
+          localStorage.setItem(PROFILE_BIO_KEY, data.profileBio || '');
+        }
+        if (data.profileName !== undefined) {
+          localStorage.setItem(PROFILE_NAME_KEY, data.profileName || '');
+        }
+        if (data.profileImage !== undefined) {
+          if (data.profileImage) {
+            localStorage.setItem(PROFILE_IMAGE_KEY, data.profileImage);
+          } else {
+            localStorage.removeItem(PROFILE_IMAGE_KEY);
+          }
+        }
+
+        // 폴더 동기화
+        if (data.folders && Array.isArray(data.folders) && data.folders.length > 0) {
+          isSyncing = true;
+          localStorage.setItem(FOLDERS_KEY, JSON.stringify(data.folders));
+          isSyncing = false;
+          renderFolders();
+        }
+
+        // 최종 업데이트 시간 표시
+        if (data.lastUpdated) {
+          updateLastUpdatedTime(data.lastUpdated);
+          localStorage.setItem('github_last_updated', gist.updated_at);
+        }
+
+        if (data.notes && Array.isArray(data.notes)) {
+          isSyncing = true;
+          localStorage.setItem(STORAGE_KEY, JSON.stringify(data.notes));
+          isSyncing = false;
+          return data.notes;
+        }
+      } catch (error) {
+        console.error('GitHub에서 동기화 실패:', error);
+        if (error.message?.includes('404') || error.message?.includes('Not Found')) {
+          console.warn('Gist를 찾을 수 없습니다.');
+        }
+      }
+      return null;
+    }
+
+    // Firebase 동기화 업데이트 확인 (quota 절약: 120초마다 수동 확인, 실시간 리스너 사용 안 함)
+    async function checkFirebaseUpdates() {
+      if (!isFirebaseEnabled() || isSyncing) {
+        return;
+      }
+
+      try {
+        const userId = getUserId(); // 고정 ID 사용
+
+        const userDoc = window.firebaseDoc(window.firebaseDb, 'users', userId);
+        const docSnap = await window.firebaseGetDoc(userDoc);
+        
+        if (!docSnap.exists()) {
+          return;
+        }
+
+        const data = docSnap.data();
+        const lastUpdated = localStorage.getItem('firebase_last_updated');
+        const currentUpdated = data.lastUpdated;
+
+        if (lastUpdated !== currentUpdated) {
+          // 업데이트 있음
+          const cloudNotes = await syncFromFirebase();
+          if (cloudNotes && cloudNotes.length > 0) {
+            const currentLocalNotes = loadNotes();
+            if (JSON.stringify(cloudNotes) !== JSON.stringify(currentLocalNotes)) {
+              renderList(cloudNotes);
+            }
+          }
+        }
+      } catch (error) {
+        console.error('업데이트 확인 오류:', error);
+      }
+    }
+
+    // Firebase 동기화 시작 (quota 절약: 120초마다 수동 확인)
+    function startFirebaseSync() {
+      if (!isFirebaseEnabled()) {
+        return;
+      }
+
+      // 이미 폴링이 실행 중이면 다시 시작하지 않음
+      if (firebaseSyncInterval) {
+        return;
+      }
+
+      // 120초마다 업데이트 확인 (quota 절약)
+      firebaseSyncInterval = setInterval(() => {
+        checkFirebaseUpdates();
+      }, 120000); // 120초 = 2분
+    }
+
+    // Firebase 동기화 중지
+    function stopFirebaseSync() {
+      if (firebaseSyncInterval) {
+        clearInterval(firebaseSyncInterval);
+        firebaseSyncInterval = null;
+      }
+    }
+
+    // GitHub 동기화 업데이트 확인 (폴링)
+    async function checkGitHubUpdates() {
+      if (!isGitHubEnabled() || !window.githubSync.gistId || isSyncing) {
+        return;
+      }
+
+      try {
+        const gist = await githubApiCall(`/gists/${window.githubSync.gistId}`);
+        const file = gist.files[window.githubSync.fileName];
+        
+        if (!file) return;
+
+        // 마지막 업데이트 시간 확인
+        const lastUpdated = localStorage.getItem('github_last_updated');
+        const currentUpdated = gist.updated_at;
+
+        if (lastUpdated !== currentUpdated) {
+          // 업데이트 있음
+          const data = await syncFromGitHub();
+          if (data && data.length > 0) {
+            renderList(data);
+          }
+        }
+      } catch (error) {
+        console.error('업데이트 확인 오류:', error);
+        if (error.message?.includes('rate limit')) {
+          // Rate limit 발생 시 폴링 중지하고 1시간 후 재시도
+          console.warn('API 호출 제한 도달. 폴링을 중지합니다.');
+          stopGitHubSync();
+          showToast('API 호출 제한에 도달했습니다. 1시간 후 자동으로 재시도합니다.');
+          
+          // 1시간 후 재시도
+          setTimeout(() => {
+            if (isGitHubEnabled()) {
+              startGitHubSync();
+              showToast('동기화를 재개합니다.');
+            }
+          }, 60 * 60 * 1000); // 1시간
+        }
+      }
+    }
+
+    // GitHub 동기화 시작 (폴링)
+    function startGitHubSync() {
+      if (!isGitHubEnabled()) {
+        return;
+      }
+
+      // 이미 폴링이 실행 중이면 다시 시작하지 않음
+      if (githubPollInterval) {
+        return;
+      }
+
+      // 초기 동기화
+      syncFromGitHub().then(cloudNotes => {
+        if (cloudNotes && cloudNotes.length > 0) {
+          const currentLocalNotes = loadNotes();
+          if (JSON.stringify(cloudNotes) !== JSON.stringify(currentLocalNotes)) {
+            renderList(cloudNotes);
+          }
+        }
+      });
+
+      // 30초마다 업데이트 확인 (API 호출 제한 방지)
+      githubPollInterval = setInterval(() => {
+        checkGitHubUpdates();
+      }, 30000);
+    }
+
+    // GitHub 동기화 중지
+    function stopGitHubSync() {
+      if (githubPollInterval) {
+        clearInterval(githubPollInterval);
+        githubPollInterval = null;
+      }
+    }
 
     function loadNotes() {
       try {
@@ -599,195 +879,33 @@
     function saveNotes(notes) {
       localStorage.setItem(STORAGE_KEY, JSON.stringify(notes));
       
-      // Firebase 동기화 (비동기지만 완료를 기다리지 않음 - 성능을 위해)
+      // Firebase 동기화 디바운싱 (10초마다 최대 1번, quota 절약)
       if (isFirebaseEnabled() && !isSyncing) {
-        syncToFirebase(notes).catch(err => {
-          console.error('Firebase 저장 실패 (재시도 안 함):', err);
-        });
+        // 기존 타이머 취소
+        if (syncTimeout) {
+          clearTimeout(syncTimeout);
+        }
+        // 10초 후에 동기화 (연속 호출 방지, quota 절약)
+        syncTimeout = setTimeout(() => {
+          syncTimeout = null;
+          syncToFirebase(notes).catch(err => {
+            console.error('Firebase 저장 실패 (재시도 안 함):', err);
+          });
+        }, 10000); // 10초 디바운싱 (쓰기 quota 절약)
       }
       
       updateTotalNotesCount();
     }
 
-    // Firebase에 동기화
-    async function syncToFirebase(notes) {
-      if (!isFirebaseEnabled()) {
-        console.log('Firebase 미설정, 동기화 건너뜀');
-        return;
-      }
-      
-      const userId = getUserId();
-      if (!userId) {
-        console.log('사용자 ID 없음, 동기화 건너뜀');
-        return;
-      }
-      
-      try {
-        isSyncing = true;
-        console.log('Firebase에 저장 시도, userId:', userId);
-        const dataDoc = window.firebaseDoc(window.firebaseDb, 'users', userId);
-        
-        // 프로필 정보도 함께 저장
-        const profileData = {
-          notes: notes,
-          profileBio: localStorage.getItem(PROFILE_BIO_KEY) || '',
-          profileName: localStorage.getItem(PROFILE_NAME_KEY) || '',
-          profileImage: localStorage.getItem(PROFILE_IMAGE_KEY) || '',
-          lastUpdated: new Date().toISOString()
-        };
-        
-        await window.firebaseSetDoc(dataDoc, profileData, { merge: true });
-        console.log('Firebase 저장 성공:', notes.length, '개 노트');
-      } catch (error) {
-        console.error('Firebase 동기화 실패:', error);
-        console.error('오류 상세:', error.code, error.message);
-      } finally {
-        isSyncing = false;
-      }
-    }
-    
     // 프로필 정보만 Firebase에 저장
     async function syncProfileToFirebase() {
       if (!isFirebaseEnabled() || isSyncing) return;
       
       try {
-        const userId = getUserId();
-        const dataDoc = window.firebaseDoc(window.firebaseDb, 'users', userId);
-        await window.firebaseSetDoc(dataDoc, {
-          profileBio: localStorage.getItem(PROFILE_BIO_KEY) || '',
-          profileName: localStorage.getItem(PROFILE_NAME_KEY) || '',
-          profileImage: localStorage.getItem(PROFILE_IMAGE_KEY) || '',
-          lastUpdated: new Date().toISOString()
-        }, { merge: true });
-        console.log('프로필 정보 Firebase 저장 완료');
+        const notes = loadNotes();
+        await syncToFirebase(notes);
       } catch (error) {
         console.error('프로필 Firebase 동기화 실패:', error);
-      }
-    }
-
-    // Firebase에서 동기화
-    async function syncFromFirebase() {
-      if (!isFirebaseEnabled()) {
-        console.log('Firebase 미설정, 동기화 건너뜀');
-        return null;
-      }
-      
-      const userId = getUserId();
-      if (!userId) {
-        console.log('사용자 ID 없음, 동기화 건너뜀');
-        return null;
-      }
-      
-      try {
-        console.log('Firebase에서 로드 시도, userId:', userId);
-        const dataDoc = window.firebaseDoc(window.firebaseDb, 'users', userId);
-        const docSnap = await window.firebaseGetDoc(dataDoc);
-        
-        // 현재 사용자 ID의 데이터가 있으면 사용
-        if (docSnap.exists()) {
-          const data = docSnap.data();
-          console.log('Firebase 문서 존재:', data);
-          
-          // 프로필 정보 동기화
-          if (data.profileBio !== undefined) {
-            localStorage.setItem(PROFILE_BIO_KEY, data.profileBio || '');
-          }
-          if (data.profileName !== undefined) {
-            localStorage.setItem(PROFILE_NAME_KEY, data.profileName || '');
-          }
-          if (data.profileImage !== undefined) {
-            if (data.profileImage) {
-              localStorage.setItem(PROFILE_IMAGE_KEY, data.profileImage);
-            } else {
-              localStorage.removeItem(PROFILE_IMAGE_KEY);
-            }
-          }
-          
-          if (data.notes && Array.isArray(data.notes)) {
-            isSyncing = true;
-            localStorage.setItem(STORAGE_KEY, JSON.stringify(data.notes));
-            isSyncing = false;
-            console.log('Firebase에서 로드 성공:', data.notes.length, '개 노트');
-            return data.notes;
-          } else {
-            console.log('Firebase 문서에 notes 필드 없음');
-          }
-        } else {
-          console.log('Firebase 문서 없음, 로컬 데이터 사용');
-        }
-        
-        // 현재 사용자 ID에 데이터가 없으면 로컬 데이터를 Firebase에 저장
-        const localNotes = loadNotes();
-        if (localNotes.length > 0) {
-          console.log('로컬 데이터를 Firebase에 저장:', localNotes.length, '개');
-          await syncToFirebase(localNotes);
-          return localNotes;
-        }
-      } catch (error) {
-        console.error('Firebase에서 동기화 실패:', error);
-        console.error('오류 상세:', error.code, error.message);
-      }
-      return null;
-    }
-
-    // Firebase 실시간 동기화 시작
-    function startFirebaseSync() {
-      if (!isFirebaseEnabled()) {
-        console.log('Firebase 미설정, 실시간 동기화 건너뜀');
-        return;
-      }
-      
-      const userId = getUserId();
-      if (!userId) {
-        console.log('사용자 ID 없음, 실시간 동기화 건너뜀');
-        return;
-      }
-      
-      try {
-        console.log('실시간 동기화 시작, userId:', userId);
-        const dataDoc = window.firebaseDoc(window.firebaseDb, 'users', userId);
-        
-        syncUnsubscribe = window.firebaseOnSnapshot(dataDoc, (docSnap) => {
-          console.log('실시간 업데이트 수신');
-          if (docSnap.exists() && !isSyncing) {
-            const data = docSnap.data();
-            
-            // 프로필 정보 실시간 동기화
-            if (data.profileBio !== undefined) {
-              localStorage.setItem(PROFILE_BIO_KEY, data.profileBio || '');
-              if (profileBioInput) profileBioInput.value = data.profileBio || '';
-            }
-            if (data.profileName !== undefined) {
-              localStorage.setItem(PROFILE_NAME_KEY, data.profileName || '');
-              if (profileNameInput) profileNameInput.value = data.profileName || '';
-            }
-            if (data.profileImage !== undefined) {
-              if (data.profileImage) {
-                localStorage.setItem(PROFILE_IMAGE_KEY, data.profileImage);
-                loadProfileImage();
-              } else {
-                localStorage.removeItem(PROFILE_IMAGE_KEY);
-                if (profileImg) profileImg.style.display = 'none';
-                if (profileImagePlaceholder) profileImagePlaceholder.style.display = 'block';
-              }
-            }
-            
-            if (data.notes && Array.isArray(data.notes)) {
-              console.log('실시간 동기화 적용:', data.notes.length, '개 노트');
-              isSyncing = true;
-              localStorage.setItem(STORAGE_KEY, JSON.stringify(data.notes));
-              isSyncing = false;
-              renderList(data.notes);
-            }
-          }
-        }, (error) => {
-          console.error('실시간 동기화 오류:', error);
-          console.error('오류 상세:', error.code, error.message);
-        });
-        console.log('실시간 동기화 리스너 등록 완료');
-      } catch (error) {
-        console.error('Firebase 실시간 동기화 시작 실패:', error);
-        console.error('오류 상세:', error.code, error.message);
       }
     }
 
@@ -860,6 +978,58 @@
     /** @param {Folder[]} folders */
     function saveFolders(folders) {
       localStorage.setItem(FOLDERS_KEY, JSON.stringify(folders));
+      
+      // Firebase 동기화 디바운싱 (5초마다 최대 1번, quota 절약)
+      // syncToFirebase가 notes와 folders를 함께 저장하므로 notes를 로드해서 동기화
+      if (isFirebaseEnabled() && !isSyncing) {
+        // 기존 타이머 취소
+        if (syncTimeout) {
+          clearTimeout(syncTimeout);
+        }
+        // 10초 후에 동기화 (연속 호출 방지, quota 절약)
+        syncTimeout = setTimeout(() => {
+          syncTimeout = null;
+          const notes = loadNotes();
+          syncToFirebase(notes).catch(err => {
+            console.error('Firebase 저장 실패 (재시도 안 함):', err);
+          });
+        }, 10000); // 10초 디바운싱 (쓰기 quota 절약)
+      }
+    }
+    
+    // 폴더만 GitHub에 저장 (기존 함수명 유지)
+    async function syncFoldersToFirebase(folders) {
+      // GitHub로 전환되었지만 호환성을 위해 함수명 유지
+      // syncToGitHub가 notes와 folders를 함께 저장하므로 notes를 로드해서 동기화
+      if (!isGitHubEnabled()) {
+        return;
+      }
+      const notes = loadNotes();
+      await syncToGitHub(notes);
+    }
+
+    // 업데이트 시간 표시 함수 (mm/dd hh:mm 형식)
+    function updateLastUpdatedTime(lastUpdatedStr) {
+      if (!lastUpdatedEl || !lastUpdatedStr) return;
+      
+      try {
+        const date = new Date(lastUpdatedStr);
+        const month = String(date.getMonth() + 1).padStart(2, '0');
+        const day = String(date.getDate()).padStart(2, '0');
+        const hours = String(date.getHours()).padStart(2, '0');
+        const minutes = String(date.getMinutes()).padStart(2, '0');
+        lastUpdatedEl.textContent = `${month}/${day} ${hours}:${minutes}`;
+      } catch (error) {
+        console.error('업데이트 시간 표시 실패:', error);
+      }
+    }
+    
+    // 저장된 최종 수정 시간 표시 (초기화 시)
+    function displaySavedLastUpdated() {
+      const savedLastUpdated = localStorage.getItem('github_last_updated');
+      if (savedLastUpdated) {
+        updateLastUpdatedTime(savedLastUpdated);
+      }
     }
 
     // 날짜 문자열 생성 (YYYY-MM-DD)
@@ -973,20 +1143,9 @@
       }
     }
 
-    // 프로필 소개 필드 업데이트
+    // 프로필 사용자 ID 업데이트 (UI 제거됨)
     function updateProfileUserId() {
-      if (profileUserIdEl) {
-        const userId = getUserId();
-        if (userId) {
-          profileUserIdEl.textContent = userId;
-        } else {
-          profileUserIdEl.textContent = '';
-        }
-      }
-      // 모바일 ID 변경 버튼도 업데이트
-      if (typeof window.updateMobileChangeIdBtn === 'function') {
-        window.updateMobileChangeIdBtn();
-      }
+      // 사용자 ID 표시 UI가 제거되어 아무것도 하지 않음
     }
     
     function updateProfileBio() {
@@ -1142,83 +1301,148 @@
       folderBtn.appendChild(folderText);
       folderBtn.appendChild(folderArrow);
       
-      // 서브메뉴 생성
-      noteContextMenuSubmenu = document.createElement('div');
-      noteContextMenuSubmenu.className = 'note-context-menu-submenu';
-      const folders = loadFolders();
-      folders.forEach(folder => {
-        // 사진 폴더는 제외 (자동으로 추가되므로)
-        if (folder.id === PHOTO_FOLDER_ID) return;
-        
-        const folderItem = document.createElement('button');
-        folderItem.type = 'button';
-        folderItem.className = 'note-context-menu-submenu-item';
-        folderItem.textContent = folder.name || '폴더';
-        folderItem.addEventListener('click', function() {
-          const notes = loadNotes();
-          const currentNote = notes.find(n => n.id === note.id);
-          if (currentNote) {
-            if (!currentNote.folderIds) {
-              currentNote.folderIds = [];
-            }
-            if (!currentNote.folderIds.includes(folder.id)) {
-              currentNote.folderIds.push(folder.id);
-              saveNotes(notes);
-              renderList(notes);
-            }
-          }
-          hideNoteContextMenu();
-        });
-        noteContextMenuSubmenu.appendChild(folderItem);
-      });
-
       // 폴더 추가 버튼 클릭/마우스 오버 시 서브메뉴 표시
       const isMobileDevice = window.innerWidth <= 768;
+      
+      // 서브메뉴 생성 함수
+      function createSubmenu() {
+        // 기존 서브메뉴 제거
+        if (noteContextMenuSubmenu) {
+          noteContextMenuSubmenu.remove();
+        }
+        
+        noteContextMenuSubmenu = document.createElement('div');
+        noteContextMenuSubmenu.className = 'note-context-menu-submenu';
+        const folders = loadFolders();
+        
+        // 디버깅: 폴더 목록 확인
+        let addedCount = 0;
+        folders.forEach(folder => {
+          // 사진 폴더는 제외 (자동으로 추가되므로)
+          if (folder.id === PHOTO_FOLDER_ID) {
+            return;
+          }
+          const folderItem = document.createElement('button');
+          folderItem.type = 'button';
+          folderItem.className = 'note-context-menu-submenu-item';
+          folderItem.textContent = folder.name || '폴더';
+          folderItem.addEventListener('click', function(e) {
+            e.stopPropagation();
+            const notes = loadNotes();
+            const currentNote = notes.find(n => n.id === note.id);
+            if (currentNote) {
+              if (!currentNote.folderIds) {
+                currentNote.folderIds = [];
+              }
+              if (!currentNote.folderIds.includes(folder.id)) {
+                currentNote.folderIds.push(folder.id);
+                saveNotes(notes);
+                renderList(notes);
+              }
+            }
+            hideNoteContextMenu();
+          });
+          noteContextMenuSubmenu.appendChild(folderItem);
+          addedCount++;
+        });
+        
+        // PC 버전을 위한 마우스 이벤트 리스너 추가
+        if (!isMobileDevice) {
+          noteContextMenuSubmenu.addEventListener('mouseenter', function() {
+            noteContextMenuSubmenu.style.display = 'flex';
+          });
+          noteContextMenuSubmenu.addEventListener('mouseleave', function() {
+            noteContextMenuSubmenu.style.display = 'none';
+          });
+        }
+        
+        return noteContextMenuSubmenu;
+      }
       
       if (isMobileDevice) {
         // 모바일: 클릭으로 서브메뉴 토글
         let submenuVisible = false;
         folderBtn.addEventListener('click', function(e) {
           e.stopPropagation();
-          if (noteContextMenuSubmenu) {
-            if (submenuVisible) {
+          e.preventDefault();
+          
+          if (submenuVisible) {
+            if (noteContextMenuSubmenu) {
               noteContextMenuSubmenu.style.display = 'none';
-              submenuVisible = false;
-            } else {
-              const rect = folderBtn.getBoundingClientRect();
-              noteContextMenuSubmenu.style.left = (rect.right + 4) + 'px';
-              noteContextMenuSubmenu.style.top = rect.top + 'px';
-              noteContextMenuSubmenu.style.display = 'flex';
-              document.body.appendChild(noteContextMenuSubmenu);
-              submenuVisible = true;
-              
-              // 서브메뉴 외부 클릭 시 닫기
-              setTimeout(() => {
-                const closeSubmenu = function(e) {
-                  if (noteContextMenuSubmenu && !noteContextMenuSubmenu.contains(e.target) && 
-                      !folderBtn.contains(e.target)) {
-                    noteContextMenuSubmenu.style.display = 'none';
-                    submenuVisible = false;
-                    document.removeEventListener('click', closeSubmenu);
-                    document.removeEventListener('touchend', closeSubmenu);
-                  }
-                };
-                document.addEventListener('click', closeSubmenu);
-                document.addEventListener('touchend', closeSubmenu);
-              }, 0);
             }
+            submenuVisible = false;
+          } else {
+            // 서브메뉴를 최신 폴더 목록으로 새로 생성
+            const submenu = createSubmenu();
+            
+            // 모바일에서 서브메뉴 위치: 폴더 추가 버튼의 오른쪽 끝에 바로 표시
+            const folderBtnRect = folderBtn.getBoundingClientRect();
+            
+            // 폴더 추가 버튼의 오른쪽 끝에 서브메뉴 표시 (항상 오른쪽)
+            let left = folderBtnRect.right + 4;
+            let top = folderBtnRect.top;
+            
+            // 서브메뉴가 실제로 렌더링된 후 너비 확인
+            submenu.style.visibility = 'hidden';
+            submenu.style.display = 'flex';
+            document.body.appendChild(submenu);
+            const submenuWidth = submenu.offsetWidth || 180;
+            const submenuHeight = Math.min(300, submenu.scrollHeight || 300);
+            
+            // 화면 오른쪽 경계 확인 - 오른쪽에 맞추되 화면 밖으로 나가지 않도록 조정
+            if (left + submenuWidth > window.innerWidth - 10) {
+              // 오른쪽에 맞추되 화면 안에 들어오도록 left 조정
+              left = Math.max(10, window.innerWidth - submenuWidth - 10);
+            }
+            
+            // 화면 아래쪽 경계 확인
+            if (top + submenuHeight > window.innerHeight - 10) {
+              top = Math.max(10, window.innerHeight - submenuHeight - 10);
+            }
+            
+            // 화면 위쪽 경계 확인
+            if (top < 10) {
+              top = 10;
+            }
+            
+            submenu.style.left = left + 'px';
+            submenu.style.top = top + 'px';
+            submenu.style.position = 'fixed';
+            submenu.style.zIndex = '10000002';
+            submenu.style.visibility = 'visible';
+            
+            submenuVisible = true;
+            
+            const currentFolders = loadFolders();
+            
+            // 서브메뉴 외부 클릭 시 닫기
+            setTimeout(() => {
+              const closeSubmenu = function(e) {
+                if (noteContextMenuSubmenu && 
+                    !noteContextMenuSubmenu.contains(e.target) && 
+                    !folderBtn.contains(e.target) &&
+                    (!noteContextMenu || !noteContextMenu.contains(e.target))) {
+                  noteContextMenuSubmenu.style.display = 'none';
+                  submenuVisible = false;
+                  document.removeEventListener('click', closeSubmenu);
+                  document.removeEventListener('touchend', closeSubmenu);
+                }
+              };
+              document.addEventListener('click', closeSubmenu, true);
+              document.addEventListener('touchend', closeSubmenu, true);
+            }, 100);
           }
         });
       } else {
         // PC: 마우스 오버로 서브메뉴 표시
         folderBtn.addEventListener('mouseenter', function() {
-          if (noteContextMenuSubmenu) {
-            const rect = folderBtn.getBoundingClientRect();
-            noteContextMenuSubmenu.style.left = (rect.right + 4) + 'px';
-            noteContextMenuSubmenu.style.top = rect.top + 'px';
-            noteContextMenuSubmenu.style.display = 'flex';
-            document.body.appendChild(noteContextMenuSubmenu);
-          }
+          // 서브메뉴를 최신 폴더 목록으로 새로 생성
+          const submenu = createSubmenu();
+          const rect = folderBtn.getBoundingClientRect();
+          submenu.style.left = (rect.right + 4) + 'px';
+          submenu.style.top = rect.top + 'px';
+          submenu.style.display = 'flex';
+          document.body.appendChild(submenu);
         });
 
         folderBtn.addEventListener('mouseleave', function(e) {
@@ -1231,15 +1455,6 @@
             }, 100);
           }
         });
-
-        if (noteContextMenuSubmenu) {
-          noteContextMenuSubmenu.addEventListener('mouseenter', function() {
-            noteContextMenuSubmenu.style.display = 'flex';
-          });
-          noteContextMenuSubmenu.addEventListener('mouseleave', function() {
-            noteContextMenuSubmenu.style.display = 'none';
-          });
-        }
       }
 
       noteContextMenu.appendChild(folderBtn);
@@ -1826,8 +2041,7 @@
         }
       }
       
-      // 타래 구조 정리: 필터링 전 전체 노트에서 타래 구조 구성 (크기 유지를 위해)
-      const allParentNotes = notes.filter(n => !n.parentId);
+      // 타래 구조 정리: 필터링 전 전체 노트에서 타래 구조 구성 (검색 필터용)
       const allChildNotesMap = new Map();
       notes.forEach(n => {
         if (n.parentId) {
@@ -1923,15 +2137,21 @@
         container.appendChild(threadContainer);
       }
       
+      // DocumentFragment 사용하여 DOM 조작 최소화 (성능 개선)
+      const fragment = document.createDocumentFragment();
+      
       for (const parent of sorted) {
         // 부모 글 렌더링 (자식이 있는지 확인)
         const hasChildren = (finalChildNotesMap.get(parent.id) || []).length > 0;
         const parentWrapper = renderNote(parent, hasChildren, 0);
-        list.appendChild(parentWrapper);
+        fragment.appendChild(parentWrapper);
         
         // 자식 글들 렌더링 (타래, 재귀적으로)
-        renderThread(parent.id, finalChildNotesMap, list, 1);
+        renderThread(parent.id, finalChildNotesMap, fragment, 1);
       }
+      
+      // 한 번에 DOM에 추가 (성능 개선)
+      list.appendChild(fragment);
       
       updateTotalNotesCount();
       updateFilterInfo();
@@ -2081,12 +2301,23 @@
 
     // 업로드: 전송 보류, 미리보기 표시 (다중)
     if (uploadBtn && fileInput) {
-      uploadBtn.addEventListener('click', function () {
-        fileInput.click();
+      // label을 사용하므로 클릭 시 자동으로 fileInput이 트리거됨
+      // 추가 이벤트 리스너는 필요 없지만, 호환성을 위해 유지
+      uploadBtn.addEventListener('click', function(e) {
+        // label이 자동으로 처리하므로 추가 작업 불필요
+        // 하지만 모바일에서 확실하게 작동하도록 명시적으로 클릭
+        if (fileInput && uploadBtn.tagName.toLowerCase() !== 'label') {
+          e.preventDefault();
+          fileInput.click();
+        }
       });
+      
       fileInput.addEventListener('change', function () {
         const files = fileInput.files;
         if (!files || files.length === 0) return;
+        
+        console.log('파일 선택됨:', files.length, '개 파일');
+        
         const readPromises = [];
         for (const file of Array.from(files)) {
           readPromises.push(new Promise(resolve => {
@@ -2094,12 +2325,20 @@
             reader.onload = function () {
               resolve(String(reader.result || ''));
             };
+            reader.onerror = function(error) {
+              console.error('파일 읽기 오류:', error);
+              resolve(null);
+            };
             reader.readAsDataURL(file);
           }));
         }
         Promise.all(readPromises).then(results => {
-          pendingImages.push(...results);
-          renderUploadPreview();
+          const validResults = results.filter(r => r !== null);
+          if (validResults.length > 0) {
+            pendingImages.push(...validResults);
+            renderUploadPreview();
+            console.log('이미지 미리보기 추가:', validResults.length, '개');
+          }
           // 선택 상태 초기화
           fileInput.value = '';
         });
@@ -2178,17 +2417,16 @@
       localStorage.removeItem(PROFILE_IMAGE_KEY);
       localStorage.removeItem(PROFILE_NAME_KEY);
       
-      // Firebase에서도 데이터 삭제
-      if (isFirebaseEnabled()) {
-        const userId = getUserId();
-        if (userId) {
-          try {
-            const dataDoc = window.firebaseDoc(window.firebaseDb, 'users', userId);
-            await window.firebaseDeleteDoc(dataDoc);
-            console.log('Firebase 데이터 삭제 완료:', userId);
-          } catch (error) {
-            console.error('Firebase 데이터 삭제 실패:', error);
-          }
+      // GitHub Gist에서도 데이터 삭제
+      if (isGitHubEnabled() && window.githubSync && window.githubSync.gistId) {
+        try {
+          await githubApiCall(`/gists/${window.githubSync.gistId}`, 'DELETE');
+          localStorage.removeItem('github_gist_id');
+          localStorage.removeItem('github_last_updated');
+          window.githubSync.gistId = null;
+          console.log('GitHub Gist 데이터 삭제 완료');
+        } catch (error) {
+          console.error('GitHub Gist 데이터 삭제 실패:', error);
         }
       }
     }
@@ -2375,12 +2613,15 @@
 
       calendarEl.innerHTML = '';
 
+      // DocumentFragment 사용하여 DOM 조작 최소화 (성능 개선)
+      const fragment = document.createDocumentFragment();
+
       const dayHeaders = ['일', '월', '화', '수', '목', '금', '토'];
       for (const header of dayHeaders) {
         const h = document.createElement('div');
         h.className = 'calendar-day-header';
         h.textContent = header;
-        calendarEl.appendChild(h);
+        fragment.appendChild(h);
       }
 
       const today = new Date();
@@ -2458,8 +2699,11 @@
           updateFilterInfo();
         });
 
-        calendarEl.appendChild(dayEl);
+        fragment.appendChild(dayEl);
       }
+      
+      // 한 번에 DOM에 추가 (성능 개선)
+      calendarEl.appendChild(fragment);
     }
 
     if (prevMonthBtn) {
@@ -2484,12 +2728,7 @@
       });
     }
 
-    // 다른 ID 버튼 이벤트
-    if (changeUserIdBtn) {
-      changeUserIdBtn.addEventListener('click', function () {
-        showUserIdModal();
-      });
-    }
+    // 다른 ID 버튼 제거됨
 
     if (clearFilterBtn) {
       clearFilterBtn.addEventListener('click', function () {
@@ -2511,6 +2750,7 @@
       folders.forEach(folder => {
         const folderItem = document.createElement('div');
         folderItem.className = 'folder-item';
+        folderItem.setAttribute('data-folder-id', folder.id);
         if (folder.id === BOOKMARK_FOLDER_ID) {
           folderItem.classList.add('bookmark');
         }
@@ -2553,7 +2793,7 @@
               }
               editingFolderId = null;
               renderFolders();
-              renderList(loadNotes());
+              // 폴더 이름 변경 시 메모 목록은 다시 렌더링할 필요 없음 (성능 최적화)
               updateFilterInfo();
             } else if (e.key === 'Escape') {
               // Escape 시 폴더 삭제 (빈 이름이면, 북마크 폴더와 사진 폴더 제외)
@@ -2576,44 +2816,70 @@
               }
               editingFolderId = null;
               renderFolders();
-              renderList(loadNotes());
+              // 폴더 이름 변경 시 메모 목록은 다시 렌더링할 필요 없음 (성능 최적화)
               updateFilterInfo();
             }
           });
           input.addEventListener('blur', function () {
-            const newName = input.value.trim();
-            const folders = loadFolders();
-            const f = folders.find(x => x.id === folder.id);
-            if (newName) {
-              if (f) {
-                f.name = newName;
-                saveFolders(folders);
+            // blur 이벤트를 약간 지연시켜서 다른 이벤트(예: 클릭)가 먼저 처리되도록 함
+            setTimeout(() => {
+              const newName = input.value.trim();
+              const folders = loadFolders();
+              const f = folders.find(x => x.id === folder.id);
+              
+              // 편집 모드가 이미 해제되었으면 처리하지 않음
+              if (editingFolderId !== folder.id) {
+                return;
               }
-            } else {
-              // 빈 값이면 폴더 삭제 (북마크 폴더와 사진 폴더 제외)
-              if (f && f.id !== BOOKMARK_FOLDER_ID && f.id !== PHOTO_FOLDER_ID) {
-                const filtered = folders.filter(x => x.id !== folder.id);
-                saveFolders(filtered);
-                if (selectedFolderId === folder.id) {
-                  selectedFolderId = null;
+              
+              if (newName) {
+                if (f) {
+                  f.name = newName;
+                  saveFolders(folders);
                 }
-              } else if (f && (f.id === BOOKMARK_FOLDER_ID || f.id === PHOTO_FOLDER_ID)) {
-                // 북마크 폴더와 사진 폴더는 이름을 유지
-                if (f.id === BOOKMARK_FOLDER_ID) {
-                  f.name = '북마크';
-                } else if (f.id === PHOTO_FOLDER_ID) {
-                  f.name = '사진';
-                }
+                editingFolderId = null;
+                renderFolders();
+                // 폴더 이름 변경 시 메모 목록은 다시 렌더링할 필요 없음 (성능 최적화)
+                updateFilterInfo();
+              } else {
+                // 빈 값이면 폴더 삭제 (북마크 폴더와 사진 폴더 제외)
+                // 단, 새로 추가한 폴더(원래 이름이 빈 문자열)는 삭제하지 않음
+                if (f && f.id !== BOOKMARK_FOLDER_ID && f.id !== PHOTO_FOLDER_ID) {
+                  // 원래 이름이 있었던 폴더만 삭제
+                  if (folder.name && folder.name.trim() !== '') {
+                    const filtered = folders.filter(x => x.id !== folder.id);
+                    saveFolders(filtered);
+                    if (selectedFolderId === folder.id) {
+                      selectedFolderId = null;
+                    }
+                editingFolderId = null;
+                renderFolders();
+                // 폴더 삭제 시에만 메모 목록 다시 렌더링
+                renderList(loadNotes());
+                updateFilterInfo();
+              }
+              // 새로 추가한 폴더(원래 이름이 빈 문자열)는 그냥 편집 모드만 해제
+              else {
+                editingFolderId = null;
+                renderFolders();
+              }
+                } else if (f && (f.id === BOOKMARK_FOLDER_ID || f.id === PHOTO_FOLDER_ID)) {
+                  // 북마크 폴더와 사진 폴더는 이름을 유지
+                  if (f.id === BOOKMARK_FOLDER_ID) {
+                    f.name = '북마크';
+                  } else if (f.id === PHOTO_FOLDER_ID) {
+                    f.name = '사진';
+                  }
                 saveFolders(folders);
+                editingFolderId = null;
+                renderFolders();
+                // 폴더 이름 변경 시 메모 목록은 다시 렌더링할 필요 없음 (성능 최적화)
+                updateFilterInfo();
               }
             }
-            editingFolderId = null;
-            renderFolders();
-            renderList(loadNotes());
-            updateFilterInfo();
+          }, 200);
           });
           folderItem.appendChild(input);
-          input.focus();
         } else {
           // 폴더 아이콘 추가
           const icon = document.createElement('img');
@@ -2692,6 +2958,10 @@
 
     if (folderAddBtn) {
       folderAddBtn.addEventListener('click', function () {
+        // 폴더 모드가 꺼져있으면 켜기
+        if (!folderMode) {
+          setFolderMode(true);
+        }
         const folders = loadFolders();
         const newFolder = {
           id: generateId(),
@@ -2701,6 +2971,21 @@
         saveFolders(folders);
         editingFolderId = newFolder.id;
         renderFolders();
+        
+        // 새 폴더로 스크롤 및 포커스 (렌더링 완료 후)
+        requestAnimationFrame(() => {
+          requestAnimationFrame(() => {
+            const folderItem = folderList?.querySelector(`[data-folder-id="${newFolder.id}"]`);
+            if (folderItem) {
+              folderItem.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+              const input = folderItem.querySelector('input');
+              if (input) {
+                input.focus();
+                input.select();
+              }
+            }
+          });
+        });
       });
     }
 
@@ -2709,6 +2994,17 @@
         if (selectedFolderId) {
           editingFolderId = selectedFolderId;
           renderFolders();
+          // 편집 모드로 전환 후 포커스
+          requestAnimationFrame(() => {
+            const folderItem = folderList?.querySelector(`[data-folder-id="${selectedFolderId}"]`);
+            if (folderItem) {
+              const input = folderItem.querySelector('input');
+              if (input) {
+                input.focus();
+                input.select();
+              }
+            }
+          });
         }
       });
     }
@@ -2860,87 +3156,127 @@
       });
     }
 
+    // 로컬 데이터 먼저 표시 (새로고침 속도 개선)
+    const localNotes = loadNotes();
+    renderList(localNotes);
+    
     // 초기 렌더
-    // Firebase 초기화 대기 후 동기화 시도
-    function initFirebaseSync() {
-      if (isFirebaseEnabled()) {
-        console.log('Firebase 동기화 시작');
-        syncFromFirebase().then(cloudNotes => {
-          if (cloudNotes && cloudNotes.length > 0) {
-            console.log('Firebase에서 데이터 로드:', cloudNotes.length, '개');
-            renderList(cloudNotes);
-          } else {
-            console.log('Firebase에 데이터 없음, 로컬 데이터 사용');
-            renderList(loadNotes());
-          }
-          // 실시간 동기화 시작
-          startFirebaseSync();
-        }).catch((error) => {
-          console.error('Firebase 동기화 오류:', error);
-          renderList(loadNotes());
-        });
-      } else {
-        console.log('Firebase 미설정, 로컬 저장소만 사용');
-        renderList(loadNotes());
+    // GitHub 동기화 초기화
+    function initGitHubSync() {
+      if (!isGitHubEnabled()) {
+        console.warn('GitHub 동기화가 활성화되지 않았습니다.');
+        return;
       }
-    }
-    
-    // Firebase 준비 대기
-    // 사용자 ID 확인
-    const currentUserId = getUserId();
-    if (!currentUserId) {
-      // 사용자 ID가 없으면 모달 표시
-      showUserIdModal();
-      // ID가 입력될 때까지 Firebase 동기화 대기
-      // 로컬 데이터는 먼저 로드
-      renderList(loadNotes());
-      updateProfileUserId();
-    } else {
-      // 사용자 ID가 있으면 Firebase 동기화 시작
-      updateProfileUserId();
-      if (window.firebaseReady) {
-        initFirebaseSync();
-      } else {
-        window.addEventListener('firebase-ready', initFirebaseSync);
-        // 타임아웃: 3초 후에도 준비되지 않으면 로컬만 사용
-        setTimeout(() => {
-          if (!window.firebaseReady) {
-            console.warn('Firebase 초기화 타임아웃, 로컬 저장소만 사용');
-            renderList(loadNotes());
-          }
-        }, 3000);
-      }
-    }
-    updateSearchIcon();
-    if (calendarEl && calendarTitleEl && prevMonthBtn && nextMonthBtn && clearFilterBtn && filterInfoEl) {
-      renderCalendar();
-      updateFilterInfo();
-    }
-    
-    updateTotalNotesCount();
-
-    // 초기 autosize & 업로드 미리보기 초기화
-    autosize(input);
-    renderUploadPreview();
-    renderFolders();
-    
-    // 프로필 초기화
-    loadProfileImage();
-    updateProfileBio();
-    updateProfileUserId();
-    
-    // 프로필 정보도 Firebase에서 로드 (syncFromFirebase에서 이미 처리되지만 확실히 하기 위해)
-    if (isFirebaseEnabled()) {
-      syncFromFirebase().then(() => {
-        // 프로필 정보 다시 로드
-        loadProfileImage();
-        updateProfileBio();
-        if (profileNameInput) {
-          const name = loadProfileName();
-          profileNameInput.value = name;
+      
+      console.log('initGitHubSync 시작', {
+        hasToken: !!window.githubSync.token,
+        hasGistId: !!window.githubSync.gistId
+      });
+      
+      // Gist ID가 없으면 먼저 로컬 데이터를 저장해서 Gist 생성
+      if (!window.githubSync.gistId) {
+        const savedGistId = localStorage.getItem('github_gist_id');
+        if (!savedGistId) {
+          // Gist가 없으면 로컬 데이터를 먼저 저장해서 Gist 생성
+          const localNotes = loadNotes();
+          console.log('Gist가 없어서 로컬 데이터를 먼저 저장합니다. 메모 개수:', localNotes.length);
+          
+          // 메모가 없어도 빈 배열로 Gist 생성
+          syncToGitHub(localNotes).then(() => {
+            console.log('Gist 생성/업데이트 완료');
+            // Gist 생성 후 동기화 시작
+            syncFromGitHub().then(cloudNotes => {
+              if (cloudNotes && cloudNotes.length > 0) {
+                const currentLocalNotes = loadNotes();
+                if (JSON.stringify(cloudNotes) !== JSON.stringify(currentLocalNotes)) {
+                  renderList(cloudNotes);
+                }
+              }
+              startGitHubSync();
+            }).catch((error) => {
+              console.error('GitHub 동기화 오류:', error);
+              showToast('동기화 오류: ' + error.message);
+            });
+          }).catch((error) => {
+            console.error('Gist 생성 오류:', error);
+            showToast('Gist 생성 실패: ' + error.message);
+          });
+          return;
+        } else {
+          window.githubSync.gistId = savedGistId;
         }
+      }
+      
+      syncFromGitHub().then(cloudNotes => {
+        // GitHub에서 데이터를 가져왔고, 로컬과 다르면 업데이트
+        if (cloudNotes && cloudNotes.length > 0) {
+          const currentLocalNotes = loadNotes();
+          // 데이터가 다르면 업데이트 (성능 최적화: 같으면 렌더링 안 함)
+          if (JSON.stringify(cloudNotes) !== JSON.stringify(currentLocalNotes)) {
+            renderList(cloudNotes);
+          }
+        }
+        // GitHub 동기화 시작 (폴링)
+        startGitHubSync();
+      }).catch((error) => {
+        console.error('GitHub 동기화 오류:', error);
+        showToast('동기화 오류: ' + error.message);
+        // 에러 발생 시에도 로컬 데이터는 이미 표시되었으므로 추가 작업 불필요
       });
     }
+    
+    // Firebase 동기화 초기화 (quota 절약: 실시간 리스너 사용 안 함)
+    function initFirebaseSync() {
+      if (!isFirebaseEnabled()) {
+        console.warn('Firebase 동기화가 활성화되지 않았습니다.');
+        return;
+      }
+      
+      console.log('initFirebaseSync 시작', {
+        hasFirebase: !!window.firebaseDb,
+        userId: getUserId() // 고정 ID
+      });
+      
+      // 초기 동기화 (읽기 1회)
+      syncFromFirebase().then(cloudNotes => {
+        if (cloudNotes && cloudNotes.length > 0) {
+          const currentLocalNotes = loadNotes();
+          if (JSON.stringify(cloudNotes) !== JSON.stringify(currentLocalNotes)) {
+            renderList(cloudNotes);
+          }
+        }
+        // Firebase 동기화 시작 (60초마다 수동 확인)
+        startFirebaseSync();
+      }).catch((error) => {
+        console.error('Firebase 동기화 오류:', error);
+        showToast('동기화 오류: ' + error.message);
+      });
+    }
+    
+    // 초기 렌더링 작업을 requestAnimationFrame으로 분산하여 성능 개선
+    // 1단계: 필수 UI 요소만 먼저 표시
+    updateSearchIcon();
+    updateTotalNotesCount();
+    autosize(input);
+    
+    // 2단계: 다음 프레임에서 폴더와 프로필 렌더링
+    requestAnimationFrame(() => {
+      renderFolders();
+      loadProfileImage();
+      updateProfileBio();
+      updateProfileUserId();
+      renderUploadPreview();
+      
+      // 3단계: 그 다음 프레임에서 캘린더 렌더링 (무거운 작업)
+      requestAnimationFrame(() => {
+        if (calendarEl && calendarTitleEl && prevMonthBtn && nextMonthBtn && clearFilterBtn && filterInfoEl) {
+          renderCalendar();
+          updateFilterInfo();
+        }
+      });
+    });
+    
+    // 프로필 정보는 syncFromFirebase에서 이미 처리되므로 중복 호출 제거 (성능 최적화)
     
     // 모바일 스타일 적용 함수
     function applyMobileStyles() {
@@ -3006,27 +3342,7 @@
           syncTransparencyLabel();
           actionsDiv.insertBefore(transparencyBtn, uploadBtn);
           
-          // ID 변경 버튼
-          const changeIdBtn = document.createElement('button');
-          changeIdBtn.id = 'mobile-change-id-btn';
-          changeIdBtn.type = 'button';
-          changeIdBtn.className = 'btn mobile-action-btn';
-          
-          // 현재 사용자 ID 표시
-          const updateChangeIdBtnText = () => {
-            const userId = getUserId();
-            changeIdBtn.textContent = userId || 'ID 변경';
-          };
-          updateChangeIdBtnText();
-          
-          changeIdBtn.addEventListener('click', function () {
-            showUserIdModal();
-          });
-          
-          actionsDiv.insertBefore(changeIdBtn, transparencyBtn);
-          
-          // ID 변경 후 버튼 텍스트 업데이트를 위한 함수 저장
-          window.updateMobileChangeIdBtn = updateChangeIdBtnText;
+          // 사용자 ID 변경 버튼 제거됨
         }
       } else {
         // PC: 모바일 투명화 버튼과 ID 변경 버튼 제거

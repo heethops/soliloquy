@@ -563,7 +563,7 @@
         // 크기가 초과하면 자동으로 모든 이미지를 재압축 (될 때까지 반복)
         const MAX_SIZE = 1000 * 1024; // 1MB
         let compressionAttempt = 0;
-        const MAX_COMPRESSION_ATTEMPTS = 5; // 최대 5번 시도
+        const MAX_COMPRESSION_ATTEMPTS = 20; // 최대 20번 시도
         
         while (dataStr.length > MAX_SIZE && compressionAttempt < MAX_COMPRESSION_ATTEMPTS) {
           compressionAttempt++;

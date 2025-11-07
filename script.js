@@ -298,9 +298,13 @@
           });
           console.log('새 ID로 데이터 복사 완료');
           
-          // 기존 ID 문서 삭제
-          await window.firebaseDeleteDoc(oldDoc);
-          console.log('기존 ID 문서 삭제 완료');
+          // 기존 ID 문서에 migratedTo 필드 추가 (다른 기기에서 자동 변경을 위해)
+          // 기존 ID 문서는 삭제하지 않고 migratedTo만 추가하여 다른 기기에서 확인 가능하도록 함
+          await window.firebaseSetDoc(oldDoc, {
+            migratedTo: newUserId,
+            migrationTime: new Date().toISOString()
+          }, { merge: true });
+          console.log('기존 ID 문서에 migratedTo 필드 추가 완료');
           
           // 로컬 스토리지도 업데이트
           if (oldData.notes && Array.isArray(oldData.notes)) {
@@ -349,22 +353,93 @@
       
       // Firebase에서 새 ID가 이미 존재하는지 확인
       if (isFirebaseEnabled() && oldUserId) {
-        const newDoc = window.firebaseDoc(window.firebaseDb, 'users', userId);
-        window.firebaseGetDoc(newDoc).then((docSnap) => {
-          if (docSnap.exists()) {
-            // 새 ID가 이미 존재하면 확인 모달 표시
-            console.log('기존 계정 발견, 확인 모달 표시:', userId);
-            showAccountSwitchModal(userId);
-          } else {
-            // 새 ID가 없으면 데이터 마이그레이션
-            console.log('새 ID 없음, 데이터 마이그레이션:', oldUserId, '->', userId);
+        // Firebase가 준비될 때까지 대기
+        const checkUserExists = async () => {
+          try {
+            // Firebase 준비 확인
+            if (!window.firebaseReady || !window.firebaseDb || !window.firebaseDoc || !window.firebaseGetDoc) {
+              console.log('Firebase 준비 대기 중...');
+              // Firebase 준비 대기
+              await new Promise((resolve) => {
+                if (window.firebaseReady && window.firebaseDb && window.firebaseDoc && window.firebaseGetDoc) {
+                  resolve();
+                } else {
+                  const checkReady = () => {
+                    if (window.firebaseReady && window.firebaseDb && window.firebaseDoc && window.firebaseGetDoc) {
+                      window.removeEventListener('firebase-ready', checkReady);
+                      resolve();
+                    }
+                  };
+                  window.addEventListener('firebase-ready', checkReady);
+                  // 타임아웃: 5초 후에도 준비되지 않으면 진행
+                  setTimeout(() => {
+                    window.removeEventListener('firebase-ready', checkReady);
+                    resolve();
+                  }, 5000);
+                }
+              });
+            }
+            
+            const newDoc = window.firebaseDoc(window.firebaseDb, 'users', userId);
+            const docSnap = await window.firebaseGetDoc(newDoc);
+            
+            console.log('Firebase 문서 확인 결과:', {
+              userId: userId,
+              exists: docSnap.exists(),
+              hasData: docSnap.exists() && docSnap.data() !== undefined
+            });
+            
+            // 문서가 존재하고 실제 데이터가 있는지 확인
+            if (docSnap.exists() && docSnap.data() !== undefined && Object.keys(docSnap.data()).length > 0) {
+              // 새 ID가 이미 존재하면 확인 모달 표시
+              console.log('기존 계정 발견, 확인 모달 표시:', userId);
+              showAccountSwitchModal(userId);
+            } else {
+              // 새 ID가 없으면 데이터 마이그레이션
+              console.log('새 ID 없음, 데이터 마이그레이션:', oldUserId, '->', userId);
+              migrateUserId(oldUserId, userId).then((success) => {
+                if (success) {
+                  setUserId(userId);
+                  hideUserIdModal();
+                  updateProfileUserId();
+                  
+                  // 프로필 정보 UI 업데이트
+                  loadProfileImage();
+                  updateProfileBio();
+                  if (profileNameInput) {
+                    const name = loadProfileName();
+                    profileNameInput.value = name;
+                  }
+                  
+                  // 기존 실시간 동기화 구독 해제
+                  if (syncUnsubscribe) {
+                    syncUnsubscribe();
+                    syncUnsubscribe = null;
+                  }
+                  
+                  // 새로운 ID로 Firebase 동기화 시작
+                  if (window.firebaseReady) {
+                    initFirebaseSync();
+                  } else {
+                    window.addEventListener('firebase-ready', initFirebaseSync);
+                  }
+                  
+                  showToast('사용자 ID가 변경되었습니다.');
+                } else {
+                  alert('사용자 ID 변경에 실패했습니다. 다시 시도해주세요.');
+                }
+              });
+            }
+          } catch (error) {
+            console.error('ID 확인 실패:', error);
+            // 오류 발생 시에도 마이그레이션 진행 (사용자 경험 개선)
+            console.log('오류 발생, 데이터 마이그레이션 진행:', oldUserId, '->', userId);
             migrateUserId(oldUserId, userId).then((success) => {
               if (success) {
                 setUserId(userId);
                 hideUserIdModal();
                 updateProfileUserId();
                 
-                // 프로필 정보 UI 업데이트
                 loadProfileImage();
                 updateProfileBio();
                 if (profileNameInput) {
@@ -372,13 +447,11 @@
                   profileNameInput.value = name;
                 }
                 
-                // 기존 실시간 동기화 구독 해제
                 if (syncUnsubscribe) {
                   syncUnsubscribe();
                   syncUnsubscribe = null;
                 }
                 
-                // 새로운 ID로 Firebase 동기화 시작
                 if (window.firebaseReady) {
                   initFirebaseSync();
                 } else {
@@ -391,10 +464,9 @@
               }
             });
           }
-        }).catch((error) => {
-          console.error('ID 확인 실패:', error);
-          alert('ID 확인 중 오류가 발생했습니다. 다시 시도해주세요.');
-        });
+        };
+        
+        checkUserExists();
       } else {
         // Firebase가 없거나 기존 ID가 없으면 그냥 설정
         setUserId(userId);
@@ -697,6 +769,70 @@
         if (docSnap.exists()) {
           const data = docSnap.data();
           console.log('Firebase 문서 존재:', data);
+          
+          // migratedTo 필드 확인 - 사용자 ID가 변경되었는지 체크
+          if (data.migratedTo && data.migratedTo !== userId) {
+            console.log('사용자 ID가 변경되었습니다:', userId, '->', data.migratedTo);
+            // 새 ID로 자동 변경
+            setUserId(data.migratedTo);
+            // 새 ID로 다시 동기화
+            const newUserId = data.migratedTo;
+            const newDataDoc = window.firebaseDoc(window.firebaseDb, 'users', newUserId);
+            const newDocSnap = await window.firebaseGetDoc(newDataDoc);
+            
+            if (newDocSnap.exists()) {
+              const newData = newDocSnap.data();
+              // 새 ID의 데이터로 동기화
+              if (newData.notes && Array.isArray(newData.notes)) {
+                isSyncing = true;
+                localStorage.setItem(STORAGE_KEY, JSON.stringify(newData.notes));
+                isSyncing = false;
+              }
+              if (newData.folders && Array.isArray(newData.folders)) {
+                isSyncing = true;
+                localStorage.setItem(FOLDERS_KEY, JSON.stringify(newData.folders));
+                isSyncing = false;
+                renderFolders();
+              }
+              if (newData.profileBio !== undefined) {
+                localStorage.setItem(PROFILE_BIO_KEY, newData.profileBio || '');
+              }
+              if (newData.profileName !== undefined) {
+                localStorage.setItem(PROFILE_NAME_KEY, newData.profileName || '');
+              }
+              if (newData.profileImage !== undefined) {
+                if (newData.profileImage) {
+                  localStorage.setItem(PROFILE_IMAGE_KEY, newData.profileImage);
+                } else {
+                  localStorage.removeItem(PROFILE_IMAGE_KEY);
+                }
+              }
+              if (newData.lastUpdated) {
+                updateLastUpdatedTime(newData.lastUpdated);
+              }
+              // UI 업데이트
+              updateProfileUserId();
+              loadProfileImage();
+              updateProfileBio();
+              if (profileNameInput) {
+                const name = loadProfileName();
+                profileNameInput.value = name;
+              }
+              if (newData.notes && Array.isArray(newData.notes)) {
+                renderList(newData.notes);
+                return newData.notes;
+              }
+            }
+            // 새 ID로 실시간 동기화 재시작
+            if (syncUnsubscribe) {
+              syncUnsubscribe();
+              syncUnsubscribe = null;
+            }
+            startFirebaseSync();
+            showToast('사용자 ID가 자동으로 변경되었습니다: ' + newUserId);
+            return null;
+          }
+          
           console.log('Firebase 문서의 folders 필드:', data.folders);
           console.log('Firebase 문서의 folders 타입:', typeof data.folders, Array.isArray(data.folders));
           
@@ -756,6 +892,76 @@
           }
         } else {
           console.log('Firebase 문서 없음, 로컬 데이터 사용');
+          
+          // 문서가 없어도 migratedTo 확인을 위해 기존 ID 문서 체크
+          // (다른 기기에서 ID 변경 시 migratedTo 필드가 있을 수 있음)
+          try {
+            const checkDoc = window.firebaseDoc(window.firebaseDb, 'users', userId);
+            const checkSnap = await window.firebaseGetDoc(checkDoc);
+            if (checkSnap.exists()) {
+              const checkData = checkSnap.data();
+              if (checkData.migratedTo && checkData.migratedTo !== userId) {
+                console.log('사용자 ID가 변경되었습니다 (문서 없음 상태에서 확인):', userId, '->', checkData.migratedTo);
+                // 새 ID로 자동 변경
+                setUserId(checkData.migratedTo);
+                // 새 ID로 다시 동기화
+                const newUserId = checkData.migratedTo;
+                const newDataDoc = window.firebaseDoc(window.firebaseDb, 'users', newUserId);
+                const newDocSnap = await window.firebaseGetDoc(newDataDoc);
+                
+                if (newDocSnap.exists()) {
+                  const newData = newDocSnap.data();
+                  // 새 ID의 데이터로 동기화
+                  if (newData.notes && Array.isArray(newData.notes)) {
+                    isSyncing = true;
+                    localStorage.setItem(STORAGE_KEY, JSON.stringify(newData.notes));
+                    isSyncing = false;
+                    renderList(newData.notes);
+                  }
+                  if (newData.folders && Array.isArray(newData.folders)) {
+                    isSyncing = true;
+                    localStorage.setItem(FOLDERS_KEY, JSON.stringify(newData.folders));
+                    isSyncing = false;
+                    renderFolders();
+                  }
+                  if (newData.profileBio !== undefined) {
+                    localStorage.setItem(PROFILE_BIO_KEY, newData.profileBio || '');
+                  }
+                  if (newData.profileName !== undefined) {
+                    localStorage.setItem(PROFILE_NAME_KEY, newData.profileName || '');
+                  }
+                  if (newData.profileImage !== undefined) {
+                    if (newData.profileImage) {
+                      localStorage.setItem(PROFILE_IMAGE_KEY, newData.profileImage);
+                    } else {
+                      localStorage.removeItem(PROFILE_IMAGE_KEY);
+                    }
+                  }
+                  if (newData.lastUpdated) {
+                    updateLastUpdatedTime(newData.lastUpdated);
+                  }
+                  // UI 업데이트
+                  updateProfileUserId();
+                  loadProfileImage();
+                  updateProfileBio();
+                  if (profileNameInput) {
+                    const name = loadProfileName();
+                    profileNameInput.value = name;
+                  }
+                  // 새 ID로 실시간 동기화 재시작
+                  if (syncUnsubscribe) {
+                    syncUnsubscribe();
+                    syncUnsubscribe = null;
+                  }
+                  startFirebaseSync();
+                  showToast('사용자 ID가 자동으로 변경되었습니다: ' + newUserId);
+                  return null;
+                }
+              }
+            }
+          } catch (error) {
+            console.error('migratedTo 확인 중 오류:', error);
+          }
         }
         
         // 현재 사용자 ID에 데이터가 없으면 로컬 데이터를 Firebase에 저장
@@ -795,6 +1001,39 @@
           console.log('실시간 업데이트 수신');
           if (docSnap.exists() && !isSyncing) {
             const data = docSnap.data();
+            
+            // migratedTo 필드 확인 - 사용자 ID가 변경되었는지 체크
+            if (data.migratedTo && data.migratedTo !== userId) {
+              console.log('사용자 ID가 변경되었습니다 (실시간):', userId, '->', data.migratedTo);
+              // 새 ID로 자동 변경
+              setUserId(data.migratedTo);
+              // 기존 실시간 동기화 구독 해제
+              if (syncUnsubscribe) {
+                syncUnsubscribe();
+                syncUnsubscribe = null;
+              }
+              // 새 ID로 다시 동기화
+              const newUserId = data.migratedTo;
+              updateProfileUserId();
+              loadProfileImage();
+              updateProfileBio();
+              if (profileNameInput) {
+                const name = loadProfileName();
+                profileNameInput.value = name;
+              }
+              // 새 ID의 데이터 로드
+              syncFromFirebase().then(cloudNotes => {
+                if (cloudNotes && cloudNotes.length > 0) {
+                  renderList(cloudNotes);
+                } else {
+                  renderList(loadNotes());
+                }
+                // 새 ID로 실시간 동기화 재시작
+                startFirebaseSync();
+              });
+              showToast('사용자 ID가 자동으로 변경되었습니다: ' + newUserId);
+              return;
+            }
             
             // 프로필 정보 실시간 동기화
             if (data.profileBio !== undefined) {
@@ -1347,25 +1586,26 @@
             // 모바일에서 서브메뉴 위치: 폴더 추가 버튼의 오른쪽 끝에 바로 표시
             const folderBtnRect = folderBtn.getBoundingClientRect();
             
-            // 폴더 추가 버튼의 오른쪽 끝에 서브메뉴 표시
+            // 폴더 추가 버튼의 오른쪽 끝에 서브메뉴 표시 (항상 오른쪽)
             let left = folderBtnRect.right + 4;
             let top = folderBtnRect.top;
             
-            // 화면 오른쪽 경계 확인 - 서브메뉴가 화면 밖으로 나가면 버튼 왼쪽에 표시
-            const submenuWidth = 180; // 대략적인 서브메뉴 너비
+            // 서브메뉴가 실제로 렌더링된 후 너비 확인
+            submenu.style.visibility = 'hidden';
+            submenu.style.display = 'flex';
+            document.body.appendChild(submenu);
+            const submenuWidth = submenu.offsetWidth || 180;
+            const submenuHeight = Math.min(300, submenu.scrollHeight || 300);
+            
+            // 화면 오른쪽 경계 확인 - 오른쪽에 맞추되 화면 밖으로 나가지 않도록 조정
             if (left + submenuWidth > window.innerWidth - 10) {
-              left = folderBtnRect.left - submenuWidth - 4;
-              if (left < 10) {
-                // 여전히 화면 밖이면 버튼 아래에 표시
-                left = folderBtnRect.left;
-                top = folderBtnRect.bottom + 4;
-              }
+              // 오른쪽에 맞추되 화면 안에 들어오도록 left 조정
+              left = Math.max(10, window.innerWidth - submenuWidth - 10);
             }
             
             // 화면 아래쪽 경계 확인
-            const submenuHeight = Math.min(300, submenu.scrollHeight || 300);
             if (top + submenuHeight > window.innerHeight - 10) {
-              top = window.innerHeight - submenuHeight - 10;
+              top = Math.max(10, window.innerHeight - submenuHeight - 10);
             }
             
             // 화면 위쪽 경계 확인
@@ -1375,11 +1615,10 @@
             
             submenu.style.left = left + 'px';
             submenu.style.top = top + 'px';
-            submenu.style.display = 'flex';
             submenu.style.position = 'fixed';
             submenu.style.zIndex = '10000002';
+            submenu.style.visibility = 'visible';
             
-            document.body.appendChild(submenu);
             submenuVisible = true;
             
             const currentFolders = loadFolders();

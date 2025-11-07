@@ -640,8 +640,14 @@
           lastUpdated: new Date().toISOString()
         };
         
+        console.log('Firebase에 저장할 데이터:', {
+          notes: notes.length,
+          folders: folders.length,
+          folderNames: folders.map(f => f.name)
+        });
+        
         await window.firebaseSetDoc(dataDoc, profileData, { merge: true });
-        console.log('Firebase 저장 성공:', notes.length, '개 노트');
+        console.log('Firebase 저장 성공:', notes.length, '개 노트,', folders.length, '개 폴더');
       } catch (error) {
         console.error('Firebase 동기화 실패:', error);
         console.error('오류 상세:', error.code, error.message);
@@ -691,6 +697,8 @@
         if (docSnap.exists()) {
           const data = docSnap.data();
           console.log('Firebase 문서 존재:', data);
+          console.log('Firebase 문서의 folders 필드:', data.folders);
+          console.log('Firebase 문서의 folders 타입:', typeof data.folders, Array.isArray(data.folders));
           
           // 프로필 정보 동기화
           if (data.profileBio !== undefined) {
@@ -707,8 +715,8 @@
             }
           }
           
-          // 폴더 동기화
-          if (data.folders && Array.isArray(data.folders)) {
+          // 폴더 동기화 - 명시적으로 확인
+          if (data.folders !== undefined && data.folders !== null && Array.isArray(data.folders) && data.folders.length > 0) {
             isSyncing = true;
             localStorage.setItem(FOLDERS_KEY, JSON.stringify(data.folders));
             isSyncing = false;
@@ -716,14 +724,19 @@
             // 폴더 목록 UI 업데이트
             renderFolders();
           } else {
-            console.log('Firebase 문서에 folders 필드 없음, 로컬 폴더 사용');
-            // Firebase에 폴더가 없으면 로컬 폴더를 Firebase에 저장
+            console.log('Firebase 문서에 folders 필드 없음 또는 빈 배열, 로컬 폴더 확인 중');
             const localFolders = loadFolders();
-            if (localFolders.length > 0) {
-              console.log('로컬 폴더를 Firebase에 저장:', localFolders.length, '개');
+            // 로컬에 기본 폴더(북마크, 사진) 외의 폴더가 있으면 Firebase에 저장
+            const customFolders = localFolders.filter(f => 
+              f.id !== BOOKMARK_FOLDER_ID && f.id !== PHOTO_FOLDER_ID
+            );
+            if (customFolders.length > 0) {
+              console.log('로컬에 사용자 폴더가 있음, Firebase에 저장:', customFolders.length, '개');
               syncFoldersToFirebase(localFolders).catch(err => {
                 console.error('로컬 폴더 Firebase 저장 실패:', err);
               });
+            } else {
+              console.log('로컬에도 사용자 폴더 없음, 기본 폴더만 사용');
             }
           }
           
@@ -1263,12 +1276,19 @@
         const folders = loadFolders();
         
         // 디버깅: 폴더 목록 확인
-        console.log('폴더 목록:', folders);
+        console.log('서브메뉴 생성 - 폴더 목록:', folders);
+        console.log('폴더 개수:', folders.length);
+        console.log('폴더 이름들:', folders.map(f => f.name));
         
+        let addedCount = 0;
         folders.forEach(folder => {
           // 사진 폴더는 제외 (자동으로 추가되므로)
-          if (folder.id === PHOTO_FOLDER_ID) return;
+          if (folder.id === PHOTO_FOLDER_ID) {
+            console.log('사진 폴더 제외:', folder.name);
+            return;
+          }
           
+          console.log('폴더 추가:', folder.name, folder.id);
           const folderItem = document.createElement('button');
           folderItem.type = 'button';
           folderItem.className = 'note-context-menu-submenu-item';
@@ -1290,9 +1310,10 @@
             hideNoteContextMenu();
           });
           noteContextMenuSubmenu.appendChild(folderItem);
+          addedCount++;
         });
         
-        console.log('서브메뉴 항목 수:', noteContextMenuSubmenu.children.length);
+        console.log('서브메뉴 항목 수:', noteContextMenuSubmenu.children.length, '추가된 폴더 수:', addedCount);
         
         // PC 버전을 위한 마우스 이벤트 리스너 추가
         if (!isMobileDevice) {
@@ -1323,27 +1344,21 @@
             // 서브메뉴를 최신 폴더 목록으로 새로 생성
             const submenu = createSubmenu();
             
-            // 모바일에서 서브메뉴 위치: 메뉴의 오른쪽 끝에 바로 표시
-            if (!noteContextMenu) {
-              console.error('noteContextMenu가 없습니다');
-              return;
-            }
-            
-            const menuRect = noteContextMenu.getBoundingClientRect();
+            // 모바일에서 서브메뉴 위치: 폴더 추가 버튼의 오른쪽 끝에 바로 표시
             const folderBtnRect = folderBtn.getBoundingClientRect();
             
-            // 메뉴의 오른쪽 끝에 서브메뉴 표시
-            let left = menuRect.right + 4;
+            // 폴더 추가 버튼의 오른쪽 끝에 서브메뉴 표시
+            let left = folderBtnRect.right + 4;
             let top = folderBtnRect.top;
             
-            // 화면 오른쪽 경계 확인 - 서브메뉴가 화면 밖으로 나가면 메뉴 왼쪽에 표시
+            // 화면 오른쪽 경계 확인 - 서브메뉴가 화면 밖으로 나가면 버튼 왼쪽에 표시
             const submenuWidth = 180; // 대략적인 서브메뉴 너비
             if (left + submenuWidth > window.innerWidth - 10) {
-              left = menuRect.left - submenuWidth - 4;
+              left = folderBtnRect.left - submenuWidth - 4;
               if (left < 10) {
-                // 여전히 화면 밖이면 메뉴 아래에 표시
-                left = menuRect.left;
-                top = menuRect.bottom + 4;
+                // 여전히 화면 밖이면 버튼 아래에 표시
+                left = folderBtnRect.left;
+                top = folderBtnRect.bottom + 4;
               }
             }
             
@@ -1367,16 +1382,17 @@
             document.body.appendChild(submenu);
             submenuVisible = true;
             
+            const currentFolders = loadFolders();
             console.log('서브메뉴 표시:', {
-              menuLeft: menuRect.left,
-              menuRight: menuRect.right,
-              menuTop: menuRect.top,
-              menuBottom: menuRect.bottom,
+              folderBtnLeft: folderBtnRect.left,
+              folderBtnRight: folderBtnRect.right,
               folderBtnTop: folderBtnRect.top,
+              folderBtnBottom: folderBtnRect.bottom,
               submenuLeft: left,
               submenuTop: top,
               windowWidth: window.innerWidth,
-              items: submenu.children.length
+              items: submenu.children.length,
+              folders: currentFolders.map(f => f.name)
             });
             
             // 서브메뉴 외부 클릭 시 닫기
@@ -2260,12 +2276,23 @@
 
     // 업로드: 전송 보류, 미리보기 표시 (다중)
     if (uploadBtn && fileInput) {
-      uploadBtn.addEventListener('click', function () {
-        fileInput.click();
+      // label을 사용하므로 클릭 시 자동으로 fileInput이 트리거됨
+      // 추가 이벤트 리스너는 필요 없지만, 호환성을 위해 유지
+      uploadBtn.addEventListener('click', function(e) {
+        // label이 자동으로 처리하므로 추가 작업 불필요
+        // 하지만 모바일에서 확실하게 작동하도록 명시적으로 클릭
+        if (fileInput && uploadBtn.tagName.toLowerCase() !== 'label') {
+          e.preventDefault();
+          fileInput.click();
+        }
       });
+      
       fileInput.addEventListener('change', function () {
         const files = fileInput.files;
         if (!files || files.length === 0) return;
+        
+        console.log('파일 선택됨:', files.length, '개 파일');
+        
         const readPromises = [];
         for (const file of Array.from(files)) {
           readPromises.push(new Promise(resolve => {
@@ -2273,12 +2300,20 @@
             reader.onload = function () {
               resolve(String(reader.result || ''));
             };
+            reader.onerror = function(error) {
+              console.error('파일 읽기 오류:', error);
+              resolve(null);
+            };
             reader.readAsDataURL(file);
           }));
         }
         Promise.all(readPromises).then(results => {
-          pendingImages.push(...results);
-          renderUploadPreview();
+          const validResults = results.filter(r => r !== null);
+          if (validResults.length > 0) {
+            pendingImages.push(...validResults);
+            renderUploadPreview();
+            console.log('이미지 미리보기 추가:', validResults.length, '개');
+          }
           // 선택 상태 초기화
           fileInput.value = '';
         });

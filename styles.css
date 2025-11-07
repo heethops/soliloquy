@@ -702,7 +702,23 @@ html, body {
   transform: none;
 }
 
-.btn-icon { display: flex; align-items: center; justify-content: center; padding: 6px; min-width: auto; border: none; }
+.btn-icon { 
+  display: flex; 
+  align-items: center; 
+  justify-content: center; 
+  padding: 6px; 
+  min-width: auto; 
+  border: none; 
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
+}
+
+/* label을 버튼처럼 사용할 때 */
+label.btn-icon {
+  user-select: none;
+  -webkit-user-select: none;
+}
 .btn-icon svg, .btn-icon img { display: block; }
 
 .btn-delete { color: #b00020; border-color: #b00020; }

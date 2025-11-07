@@ -1185,11 +1185,43 @@
               noteContextMenuSubmenu.style.display = 'none';
               submenuVisible = false;
             } else {
+              // 서브메뉴 내용을 최신 폴더 목록으로 업데이트
+              noteContextMenuSubmenu.innerHTML = '';
+              const folders = loadFolders();
+              folders.forEach(folder => {
+                // 사진 폴더는 제외 (자동으로 추가되므로)
+                if (folder.id === PHOTO_FOLDER_ID) return;
+                
+                const folderItem = document.createElement('button');
+                folderItem.type = 'button';
+                folderItem.className = 'note-context-menu-submenu-item';
+                folderItem.textContent = folder.name || '폴더';
+                folderItem.addEventListener('click', function() {
+                  const notes = loadNotes();
+                  const currentNote = notes.find(n => n.id === note.id);
+                  if (currentNote) {
+                    if (!currentNote.folderIds) {
+                      currentNote.folderIds = [];
+                    }
+                    if (!currentNote.folderIds.includes(folder.id)) {
+                      currentNote.folderIds.push(folder.id);
+                      saveNotes(notes);
+                      renderList(notes);
+                    }
+                  }
+                  hideNoteContextMenu();
+                });
+                noteContextMenuSubmenu.appendChild(folderItem);
+              });
+              
               const rect = folderBtn.getBoundingClientRect();
               noteContextMenuSubmenu.style.left = (rect.right + 4) + 'px';
               noteContextMenuSubmenu.style.top = rect.top + 'px';
               noteContextMenuSubmenu.style.display = 'flex';
-              document.body.appendChild(noteContextMenuSubmenu);
+              // 이미 body에 추가되어 있지 않은 경우에만 추가
+              if (!noteContextMenuSubmenu.parentNode) {
+                document.body.appendChild(noteContextMenuSubmenu);
+              }
               submenuVisible = true;
               
               // 서브메뉴 외부 클릭 시 닫기

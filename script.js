@@ -415,6 +415,70 @@
     let lastSyncedData = null; // 마지막으로 동기화한 데이터 (중복 방지)
     let firebaseSyncInterval = null; // Firebase 수동 동기화 인터벌 (현재 사용 안 함)
 
+    // Base64 이미지를 재압축하는 함수
+    async function recompressBase64Image(base64Data, targetMaxSizeKB = 50) {
+      return new Promise((resolve, reject) => {
+        const img = new Image();
+        img.onload = function() {
+          let width = img.width;
+          let height = img.height;
+          const originalWidth = width;
+          const originalHeight = height;
+
+          // 타겟 크기 (Base64는 원본보다 약 33% 크므로)
+          const maxSize = targetMaxSizeKB * 1024 * 1.33; // Base64 크기
+          
+          // 초기 품질
+          let quality = 0.6;
+          let compressed = '';
+          
+          // 반복적으로 압축 시도 (최대 20회)
+          for (let attempt = 0; attempt < 20; attempt++) {
+            const canvas = document.createElement('canvas');
+            canvas.width = width;
+            canvas.height = height;
+            const ctx = canvas.getContext('2d');
+            ctx.drawImage(img, 0, 0, width, height);
+            
+            compressed = canvas.toDataURL('image/jpeg', quality);
+            
+            // 타겟 크기 이하면 성공
+            if (compressed.length <= maxSize) {
+              break;
+            }
+            
+            // 품질을 낮춤
+            if (quality > 0.1) {
+              quality = Math.max(0.1, quality - 0.1);
+            } else {
+              // 품질이 최저이면 크기를 줄임
+              const ratio = Math.sqrt(maxSize / compressed.length) * 0.9; // 90%로 더 작게
+              width = Math.max(100, Math.round(originalWidth * ratio));
+              height = Math.max(100, Math.round(originalHeight * ratio));
+              quality = 0.3; // 크기 줄일 때는 품질도 낮춤
+            }
+          }
+          
+          // 여전히 크면 강제로 더 작게 리사이즈
+          if (compressed.length > maxSize) {
+            const forceRatio = Math.sqrt(maxSize / compressed.length) * 0.8;
+            width = Math.max(100, Math.round(width * forceRatio));
+            height = Math.max(100, Math.round(height * forceRatio));
+            const canvas = document.createElement('canvas');
+            canvas.width = width;
+            canvas.height = height;
+            const ctx = canvas.getContext('2d');
+            ctx.drawImage(img, 0, 0, width, height);
+            compressed = canvas.toDataURL('image/jpeg', 0.2); // 매우 낮은 품질
+          }
+
+          resolve(compressed);
+        };
+        img.onerror = reject;
+        img.src = base64Data;
+      });
+    }
+
     // Firebase에 데이터 저장 (즉시 동기화, 데이터 변경 시에만 저장)
     async function syncToFirebase(notes, forceSync = false) {
       if (!isFirebaseEnabled()) {
@@ -450,7 +514,7 @@
           folders = [];
         }
         
-        const profileData = {
+        let profileData = {
           notes: notes,
           folders: folders,
           profileBio: localStorage.getItem(PROFILE_BIO_KEY) || '',
@@ -459,7 +523,7 @@
           lastUpdated: new Date().toISOString()
         };
         
-        const dataStr = JSON.stringify(profileData);
+        let dataStr = JSON.stringify(profileData);
         
         // forceSync가 true이면 무조건 저장 (글 작성 시)
         // forceSync가 false일 때만 데이터 변경 확인
@@ -487,7 +551,7 @@
 
         isSyncing = true;
         
-        const dataSizeKB = Math.round(dataStr.length / 1024);
+        let dataSizeKB = Math.round(dataStr.length / 1024);
         console.log('Firebase에 데이터 저장 중...', {
           notes: notes.length,
           folders: folders.length,
@@ -496,10 +560,99 @@
         });
         
         // Firebase Firestore 문서 크기 제한 확인 (1MB)
-        if (dataStr.length > 1000 * 1024) {
-          const error = new Error(`데이터 크기가 너무 큽니다: ${dataSizeKB}KB (제한: 1000KB)`);
-          console.error('❌', error.message);
-          throw error;
+        // 크기가 초과하면 자동으로 모든 이미지를 재압축 (될 때까지 반복)
+        const MAX_SIZE = 1000 * 1024; // 1MB
+        let compressionAttempt = 0;
+        const MAX_COMPRESSION_ATTEMPTS = 5; // 최대 5번 시도
+        
+        while (dataStr.length > MAX_SIZE && compressionAttempt < MAX_COMPRESSION_ATTEMPTS) {
+          compressionAttempt++;
+          console.warn(`⚠️ 데이터 크기 초과 (시도 ${compressionAttempt}/${MAX_COMPRESSION_ATTEMPTS}):`, dataSizeKB + 'KB', '- 이미지 자동 재압축 시도');
+          
+          // 이미지가 있는 모든 메모를 재압축
+          const compressedNotes = [];
+          let hasCompressed = false;
+          let totalImages = 0;
+          
+          // 이미지 개수 계산
+          for (const note of notes) {
+            if (note.images && note.images.length > 0) {
+              totalImages += note.images.length;
+            }
+          }
+          
+          // 각 이미지당 허용 크기 계산 (텍스트/폴더/프로필 데이터를 제외한 여유 공간)
+          // 안전하게 텍스트 데이터가 약 100KB라고 가정하고, 나머지를 이미지에 할당
+          const reservedSize = 100 * 1024; // 예약 공간
+          const availableSize = MAX_SIZE - reservedSize;
+          const targetSizePerImage = totalImages > 0 ? Math.floor(availableSize / totalImages) : 0;
+          const targetSizePerImageKB = Math.max(20, Math.floor(targetSizePerImage / 1024)); // 최소 20KB
+          
+          console.log(`이미지당 목표 크기: ${targetSizePerImageKB}KB (총 이미지: ${totalImages}개)`);
+          
+          for (const note of notes) {
+            if (note.images && note.images.length > 0) {
+              const compressedImages = [];
+              for (const imgData of note.images) {
+                try {
+                  // 시도 횟수에 따라 점진적으로 더 작게 압축
+                  const progressiveTargetKB = Math.max(15, targetSizePerImageKB - (compressionAttempt - 1) * 10);
+                  const compressed = await recompressBase64Image(imgData, progressiveTargetKB);
+                  compressedImages.push(compressed);
+                  hasCompressed = true;
+                  const originalSize = Math.round(imgData.length / 1024);
+                  const newSize = Math.round(compressed.length / 1024);
+                  console.log(`이미지 재압축: ${originalSize}KB → ${newSize}KB (목표: ${progressiveTargetKB}KB)`);
+                } catch (e) {
+                  console.warn('이미지 재압축 실패, 원본 사용:', e);
+                  compressedImages.push(imgData);
+                }
+              }
+              compressedNotes.push({ ...note, images: compressedImages });
+            } else {
+              compressedNotes.push(note);
+            }
+          }
+          
+          if (hasCompressed) {
+            // 재압축된 데이터로 프로필 데이터 재생성
+            profileData.notes = compressedNotes;
+            notes = compressedNotes; // 다음 반복에서 최신 압축 이미지 사용
+            dataStr = JSON.stringify(profileData);
+            dataSizeKB = Math.round(dataStr.length / 1024);
+            
+            // 재압축된 데이터를 localStorage에도 저장 (다음 시도에 사용)
+            localStorage.setItem(STORAGE_KEY, JSON.stringify(compressedNotes));
+            
+            if (dataStr.length <= MAX_SIZE) {
+              console.log(`✅ 재압축 완료 (시도 ${compressionAttempt}회):`, dataSizeKB + 'KB');
+              break; // 성공하면 루프 종료
+            } else {
+              console.warn(`재압축 후에도 크기 초과: ${dataSizeKB}KB, 재시도...`);
+            }
+          } else {
+            // 이미지가 없거나 압축할 이미지가 없는 경우
+            // (텍스트만으로 1MB 초과하거나 이미지 압축이 실패한 경우)
+            console.error('❌ 데이터 크기가 너무 큽니다:', dataSizeKB + 'KB');
+            if (totalImages === 0) {
+              console.error('이미지가 없는데 텍스트만으로 크기 초과 - 메모가 너무 많습니다.');
+              showToast('메모가 너무 많습니다. 일부 메모를 삭제해주세요.');
+            } else {
+              console.error('이미지 압축에 실패했습니다.');
+              showToast('이미지 압축에 실패했습니다. 일부 메모나 이미지를 삭제해주세요.');
+            }
+            isSyncing = false;
+            return false;
+          }
+        }
+        
+        // 최대 시도 횟수까지 했는데도 초과하면 에러
+        if (dataStr.length > MAX_SIZE) {
+          console.error('❌ 최대 압축 시도 후에도 데이터 크기가 너무 큽니다:', dataSizeKB + 'KB');
+          console.error('일부 메모나 이미지를 삭제해주세요.');
+          showToast('압축에 실패했습니다. 일부 메모나 이미지를 삭제해주세요.');
+          isSyncing = false;
+          return false;
         }
         
         const userDoc = window.firebaseDoc(window.firebaseDb, 'users', userId);
@@ -535,9 +688,12 @@
           stack: error.stack
         });
         
-        // 에러 메시지를 사용자에게 표시
-        const errorMsg = error.message || '알 수 없는 오류';
-        showToast('동기화 실패: ' + errorMsg);
+        // 크기 초과 관련 에러는 토스트 표시하지 않음 (이미 재압축 시도했으므로)
+        if (!error.message || !error.message.includes('크기가 너무 큽니다')) {
+          // 다른 에러만 토스트 표시
+          const errorMsg = error.message || '알 수 없는 오류';
+          showToast('동기화 실패: ' + errorMsg);
+        }
         
         // lastSyncedData는 유지하지 않음 (재시도 가능하도록)
         return false;

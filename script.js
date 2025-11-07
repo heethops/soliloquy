@@ -114,14 +114,6 @@
     /** @type {HTMLInputElement|null} */
     const profileImageInput = document.getElementById('profile-image-input');
     /** @type {HTMLElement|null} */
-    const userIdModal = document.getElementById('user-id-modal');
-    /** @type {HTMLInputElement|null} */
-    const userIdInput = document.getElementById('user-id-input');
-    /** @type {HTMLButtonElement|null} */
-    const userIdSubmitBtn = document.getElementById('user-id-submit');
-    /** @type {HTMLButtonElement|null} */
-    const userIdSkipBtn = document.getElementById('user-id-skip');
-
     if (!input || !submitBtn || !list) {
       console.error('필수 요소를 찾을 수 없습니다', { input: !!input, submitBtn: !!submitBtn, list: !!list });
       return;
@@ -492,14 +484,30 @@
 
         isSyncing = true;
         
+        const dataSizeKB = Math.round(dataStr.length / 1024);
         console.log('Firebase에 데이터 저장 중...', {
           notes: notes.length,
           folders: folders.length,
-          dataSize: Math.round(dataStr.length / 1024) + 'KB'
+          dataSize: dataSizeKB + 'KB',
+          hasImages: notes.some(n => n.images && n.images.length > 0)
         });
         
+        // Firebase Firestore 문서 크기 제한 확인 (1MB)
+        if (dataStr.length > 1000 * 1024) {
+          const error = new Error(`데이터 크기가 너무 큽니다: ${dataSizeKB}KB (제한: 1000KB)`);
+          console.error('❌', error.message);
+          throw error;
+        }
+        
         const userDoc = window.firebaseDoc(window.firebaseDb, 'users', userId);
+        console.log('Firebase setDoc 호출 중...', {
+          userId: userId,
+          dataSize: dataSizeKB + 'KB'
+        });
+        
         await window.firebaseSetDoc(userDoc, profileData, { merge: true });
+        
+        console.log('Firebase setDoc 완료');
 
         // 동기화 성공 시 마지막 동기화 데이터 저장 (로컬 저장소에도 저장)
         lastSyncedData = dataStr;
@@ -1172,11 +1180,6 @@
       }
     }
 
-    // 프로필 사용자 ID 업데이트 (UI 제거됨)
-    function updateProfileUserId() {
-      // 사용자 ID 표시 UI가 제거되어 아무것도 하지 않음
-    }
-    
     function updateProfileBio() {
       if (!profileBioInput) return;
       const bio = loadProfileBio();
@@ -2355,22 +2358,51 @@
       // Firebase 동기화 (모바일에서도 확실히 저장되도록 await)
       if (isFirebaseEnabled()) {
         try {
+          // 이미지가 포함된 경우 데이터 크기 확인
+          if (imagesToSave.length > 0) {
+            const dataSize = JSON.stringify(notes).length;
+            const dataSizeKB = Math.round(dataSize / 1024);
+            console.log('이미지 포함 데이터 크기:', dataSizeKB + 'KB', `(${imagesToSave.length}개 이미지)`);
+            
+            // Firebase Firestore 문서 크기 제한 확인 (1MB = 1024KB)
+            if (dataSize > 1000 * 1024) {
+              console.error('❌ 데이터 크기가 너무 큽니다:', dataSizeKB + 'KB', '(제한: 1000KB)');
+              showToast('이미지가 너무 커서 동기화할 수 없습니다');
+              return; // 저장하지 않고 종료
+            }
+          }
+          
           // 강제 동기화 (새 메모가 추가되었으므로)
+          console.log('Firebase 동기화 시작...', {
+            notesCount: notes.length,
+            imagesCount: imagesToSave.length,
+            hasText: !!value
+          });
+          
           const syncSuccess = await syncToFirebase(notes, true);
           if (syncSuccess) {
             console.log('✅ 메모가 Firebase에 저장되었습니다. (이미지 포함:', imagesToSave.length, '개)');
             showToast('저장 완료');
           } else {
-            console.warn('⚠️ Firebase 동기화 실패, 로컬에는 저장됨');
+            console.error('❌ Firebase 동기화 실패, 로컬에는 저장됨');
+            showToast('동기화 실패, 로컬에는 저장됨');
             // 로컬에는 저장되었으므로 계속 진행
           }
         } catch (err) {
-          console.error('❌ Firebase 저장 실패:', err);
-          showToast('동기화 실패, 로컬에는 저장됨');
+          console.error('❌ Firebase 저장 중 에러 발생:', err);
+          console.error('에러 상세:', {
+            message: err.message,
+            code: err.code,
+            stack: err.stack
+          });
+          showToast('동기화 실패: ' + (err.message || '알 수 없는 오류'));
           // 저장 실패해도 로컬에는 저장되었으므로 계속 진행
         }
       } else {
-        console.warn('Firebase가 활성화되지 않아 로컬 저장만 수행');
+        console.warn('Firebase가 활성화되지 않아 로컬 저장만 수행', {
+          firebaseReady: window.firebaseReady,
+          hasDb: !!window.firebaseDb
+        });
       }
       
       renderList(notes);
@@ -2538,6 +2570,16 @@
           const validResults = results.filter(r => r !== null && r !== undefined);
           
           if (validResults.length > 0) {
+            // 압축된 이미지 크기 확인 및 로깅
+            validResults.forEach((imgData, index) => {
+              const imgSizeKB = Math.round(imgData.length / 1024);
+              console.log(`이미지 ${index + 1} 압축 완료: ${imgSizeKB}KB`);
+            });
+            
+            const totalSize = validResults.reduce((sum, img) => sum + img.length, 0);
+            const totalSizeKB = Math.round(totalSize / 1024);
+            console.log('전체 이미지 크기:', totalSizeKB + 'KB', `(${validResults.length}개)`);
+            
             pendingImages.push(...validResults);
             renderUploadPreview();
             console.log('이미지 미리보기 추가:', validResults.length, '개');
@@ -3554,7 +3596,6 @@
       renderFolders();
       loadProfileImage();
       updateProfileBio();
-      updateProfileUserId();
       renderUploadPreview();
       
       // 3단계: 그 다음 프레임에서 캘린더 렌더링 (무거운 작업)

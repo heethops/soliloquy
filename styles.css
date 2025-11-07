@@ -39,24 +39,6 @@ html, body {
   position: relative;
 }
 
-.change-user-id-btn {
-  position: absolute;
-  top: 12px;
-  right: 16px;
-  background: transparent;
-  border: none;
-  color: #888888;
-  font-size: 12px;
-  cursor: pointer;
-  padding: 4px 8px;
-  border-radius: 4px;
-}
-
-.change-user-id-btn:hover {
-  background: #f5f5f5;
-  color: #666666;
-}
-
 .last-updated {
   display: none;
 }
@@ -252,20 +234,12 @@ html, body {
 
 .profile-bio {
   width: 100%;
-  margin-top: 1px;
+  margin-top: 0;
 }
 
 .profile-name {
   margin-bottom: 0;
-  margin-top: 3px;
-}
-
-.profile-user-id {
-  color: #888888;
-  font-size: 11px;
-  text-align: center;
-  margin-bottom: 0;
-  padding: 0 12px;
+  margin-top: 8px;
 }
 
 .profile-name-input {
@@ -1023,62 +997,6 @@ label.btn-icon {
 }
 
 .reset-confirm-buttons {
-  display: flex;
-  gap: 10px;
-  justify-content: flex-end;
-}
-
-.user-id-modal {
-  position: fixed;
-  top: 0;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  background: rgba(0, 0, 0, 0.5);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  z-index: 10001;
-}
-
-.user-id-content {
-  background: var(--card);
-  border: 1px solid var(--border);
-  border-radius: 12px;
-  padding: 24px;
-  max-width: 400px;
-  width: 90%;
-}
-
-.user-id-content h2 {
-  margin: 0 0 12px 0;
-  font-size: 20px;
-  font-weight: 400;
-}
-
-.user-id-content p {
-  margin: 0 0 20px 0;
-  font-size: 14px;
-  color: var(--muted);
-}
-
-.user-id-content input {
-  width: 100%;
-  padding: 10px 12px;
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  font-size: 14px;
-  margin-bottom: 20px;
-  box-sizing: border-box;
-}
-
-.user-id-content input:focus {
-  outline: none;
-  border-color: var(--accent);
-  box-shadow: 0 0 0 3px rgba(16, 106, 53, 0.1);
-}
-
-.user-id-buttons {
   display: flex;
   gap: 10px;
   justify-content: flex-end;

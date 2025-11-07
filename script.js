@@ -472,10 +472,10 @@
             console.error('ID 확인 실패:', error);
             // 오류 발생 시에도 마이그레이션 진행 (사용자 경험 개선)
             console.log('오류 발생, 데이터 마이그레이션 진행:', oldUserId, '->', userId);
+            hideUserIdModal(); // 모달 즉시 닫기
             migrateUserId(oldUserId, userId).then((success) => {
               if (success) {
                 setUserId(userId);
-                hideUserIdModal();
                 updateProfileUserId();
                 
                 loadProfileImage();
@@ -803,12 +803,13 @@
         const dataDoc = window.firebaseDoc(window.firebaseDb, 'users', userId);
         const docSnap = await window.firebaseGetDoc(dataDoc);
         
-        // 현재 사용자 ID의 데이터가 있으면 사용
+        // 문서가 존재하는지 확인 (migratedTo만 있어도 exists()는 true)
         if (docSnap.exists()) {
-          const data = docSnap.data();
+          const data = docSnap.data() || {};
           console.log('Firebase 문서 존재:', data);
           
-          // migratedTo 필드 확인 - 사용자 ID가 변경되었는지 체크
+          // migratedTo 필드 확인 - 사용자 ID가 변경되었는지 체크 (가장 먼저 확인)
+          // migratedTo 필드만 있어도 ID 변경이 감지되어야 함
           if (data.migratedTo && data.migratedTo !== userId) {
             console.log('사용자 ID가 변경되었습니다:', userId, '->', data.migratedTo);
             // 새 ID로 자동 변경
@@ -929,15 +930,21 @@
             console.log('Firebase 문서에 notes 필드 없음');
           }
         } else {
-          console.log('Firebase 문서 없음, 로컬 데이터 사용');
+          console.log('Firebase 문서 없음 (docSnap.exists() = false)');
           
-          // 문서가 없어도 migratedTo 확인을 위해 기존 ID 문서 체크
-          // (다른 기기에서 ID 변경 시 migratedTo 필드가 있을 수 있음)
+          // docSnap.exists()가 false여도 문서가 생성되어 migratedTo만 있을 수 있음
+          // 따라서 문서를 다시 확인하여 migratedTo 필드 확인
           try {
+            // 같은 문서를 다시 확인 (문서가 생성되어 migratedTo만 있을 수 있음)
             const checkDoc = window.firebaseDoc(window.firebaseDb, 'users', userId);
             const checkSnap = await window.firebaseGetDoc(checkDoc);
+            
+            // 문서가 존재하는 경우 (migratedTo만 있어도 exists()는 true)
             if (checkSnap.exists()) {
-              const checkData = checkSnap.data();
+              const checkData = checkSnap.data() || {};
+              console.log('문서 없음 상태에서 문서 재확인 결과:', checkData);
+              
+              // migratedTo 필드 확인
               if (checkData.migratedTo && checkData.migratedTo !== userId) {
                 console.log('사용자 ID가 변경되었습니다 (문서 없음 상태에서 확인):', userId, '->', checkData.migratedTo);
                 // 새 ID로 자동 변경

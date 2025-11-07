@@ -1777,28 +1777,32 @@
             // JPEG로 변환 (압축)
             let compressedDataUrl = canvas.toDataURL('image/jpeg', quality);
             
-            // Base64 인코딩 후 크기 확인 (약 800KB 이하로 유지)
-            // Base64는 원본보다 약 33% 크므로, 원본이 600KB 정도면 Base64는 약 800KB
+            // Base64 인코딩 후 크기 확인 (개별 이미지를 200KB 이하로 강력 압축)
+            // 여러 이미지를 올릴 수 있으므로 개별 이미지는 작게 유지
+            // Base64는 원본보다 약 33% 크므로, 원본이 150KB 정도면 Base64는 약 200KB
             let attemptQuality = quality;
-            const maxSize = 600 * 1024; // 600KB
+            const maxSizePerImage = 150 * 1024; // 150KB (Base64로 약 200KB)
             
             // 크기가 너무 크면 품질을 낮춰서 재압축
-            while (attemptQuality > 0.3 && compressedDataUrl.length > maxSize * 1.33) {
+            while (attemptQuality > 0.2 && compressedDataUrl.length > maxSizePerImage * 1.33) {
               attemptQuality -= 0.1;
               compressedDataUrl = canvas.toDataURL('image/jpeg', attemptQuality);
               console.log(`이미지 압축 재시도: 품질 ${Math.round(attemptQuality * 100)}%, 크기 ${Math.round(compressedDataUrl.length / 1024)}KB`);
             }
 
-            // 너무 큰 경우 추가로 리사이즈
-            if (compressedDataUrl.length > maxSize * 1.33) {
-              const newRatio = Math.sqrt((maxSize * 1.33) / compressedDataUrl.length);
+            // 여전히 너무 큰 경우 추가로 리사이즈 (반복적으로 크기 줄이기)
+            let resizeAttempts = 0;
+            while (compressedDataUrl.length > maxSizePerImage * 1.33 && resizeAttempts < 5) {
+              const newRatio = Math.sqrt((maxSizePerImage * 1.33) / compressedDataUrl.length);
               const newWidth = Math.round(width * newRatio);
               const newHeight = Math.round(height * newRatio);
               
               canvas.width = newWidth;
               canvas.height = newHeight;
               ctx.drawImage(img, 0, 0, newWidth, newHeight);
-              compressedDataUrl = canvas.toDataURL('image/jpeg', 0.8);
+              compressedDataUrl = canvas.toDataURL('image/jpeg', 0.7);
+              resizeAttempts++;
+              console.log(`이미지 리사이즈 재시도 ${resizeAttempts}: ${newWidth}x${newHeight}, 크기 ${Math.round(compressedDataUrl.length / 1024)}KB`);
             }
 
             const originalSizeKB = Math.round(file.size / 1024);
@@ -2367,16 +2371,69 @@
         // 비동기로 처리해서 전송 속도 개선
         (async () => {
           try {
-            // 이미지가 포함된 경우 데이터 크기 확인
+            // 이미지가 포함된 경우 데이터 크기 확인 및 추가 압축
             if (imagesToSave.length > 0) {
-              const dataSize = JSON.stringify(notes).length;
-              const dataSizeKB = Math.round(dataSize / 1024);
+              let dataSize = JSON.stringify(notes).length;
+              let dataSizeKB = Math.round(dataSize / 1024);
               
               // Firebase Firestore 문서 크기 제한 확인 (1MB = 1024KB)
+              // 크기가 초과되면 이미지를 추가로 압축
               if (dataSize > 1000 * 1024) {
-                console.error('❌ 데이터 크기가 너무 큽니다:', dataSizeKB + 'KB', '(제한: 1000KB)');
-                showToast('이미지가 너무 커서 동기화할 수 없습니다');
-                return;
+                console.warn('⚠️ 데이터 크기 초과:', dataSizeKB + 'KB', '- 추가 압축 시도');
+                
+                // 각 이미지를 더 작게 압축
+                const recompressedImages = [];
+                for (let i = 0; i < imagesToSave.length; i++) {
+                  const imgData = imagesToSave[i];
+                  const imgSizeKB = Math.round(imgData.length / 1024);
+                  
+                  // 이미지가 200KB 이상이면 추가 압축
+                  if (imgData.length > 200 * 1024) {
+                    try {
+                      // Base64를 Image로 변환하여 재압축
+                      const img = new Image();
+                      const recompressed = await new Promise((resolve, reject) => {
+                        img.onload = function() {
+                          const canvas = document.createElement('canvas');
+                          const ratio = Math.min(1200 / img.width, 1200 / img.height);
+                          canvas.width = Math.round(img.width * ratio);
+                          canvas.height = Math.round(img.height * ratio);
+                          const ctx = canvas.getContext('2d');
+                          ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+                          const compressed = canvas.toDataURL('image/jpeg', 0.6);
+                          resolve(compressed);
+                        };
+                        img.onerror = reject;
+                        img.src = imgData;
+                      });
+                      
+                      recompressedImages.push(recompressed);
+                      console.log(`이미지 ${i + 1} 추가 압축: ${imgSizeKB}KB → ${Math.round(recompressed.length / 1024)}KB`);
+                    } catch (e) {
+                      console.warn(`이미지 ${i + 1} 재압축 실패, 원본 사용:`, e);
+                      recompressedImages.push(imgData);
+                    }
+                  } else {
+                    recompressedImages.push(imgData);
+                  }
+                }
+                
+                // 재압축된 이미지로 노트 업데이트
+                const noteIndex = notes.length - 1;
+                if (notes[noteIndex] && notes[noteIndex].images) {
+                  notes[noteIndex].images = recompressedImages;
+                  localStorage.setItem(STORAGE_KEY, JSON.stringify(notes));
+                  
+                  // 재압축 후 크기 확인
+                  dataSize = JSON.stringify(notes).length;
+                  dataSizeKB = Math.round(dataSize / 1024);
+                  
+                  if (dataSize > 1000 * 1024) {
+                    console.error('❌ 재압축 후에도 데이터 크기가 너무 큽니다:', dataSizeKB + 'KB');
+                    // 여전히 크면 일부 이미지 제거하거나 더 강력하게 압축
+                    showToast('이미지가 너무 많아 일부만 저장됩니다');
+                  }
+                }
               }
             }
             

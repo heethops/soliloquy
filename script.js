@@ -424,17 +424,22 @@
     let firebaseSyncInterval = null; // Firebase 수동 동기화 인터벌 (현재 사용 안 함)
 
     // Firebase에 데이터 저장 (즉시 동기화, 데이터 변경 시에만 저장)
-    async function syncToFirebase(notes) {
+    async function syncToFirebase(notes, forceSync = false) {
       if (!isFirebaseEnabled()) {
-        console.warn('Firebase 동기화가 활성화되지 않았습니다.');
-        return;
+        console.warn('Firebase 동기화가 활성화되지 않았습니다.', {
+          firebaseReady: window.firebaseReady,
+          hasDb: !!window.firebaseDb
+        });
+        return false;
       }
 
       const userId = getUserId(); // 고정 ID 사용
 
       console.log('Firebase에 동기화 시작...', {
         notesCount: notes.length,
-        userId: userId
+        userId: userId,
+        isSyncing: isSyncing,
+        forceSync: forceSync
       });
 
       try {
@@ -463,24 +468,64 @@
         };
         
         const dataStr = JSON.stringify(profileData);
-        if (lastSyncedData === dataStr) {
+        
+        // forceSync가 true이거나 데이터가 변경된 경우에만 동기화
+        if (!forceSync && lastSyncedData === dataStr) {
           // 데이터가 변경되지 않았으면 동기화하지 않음 (quota 절약)
           console.log('데이터 변경 없음, 동기화 스킵');
-          return;
+          return true; // 스킵했지만 성공으로 간주
+        }
+
+        // 동기화 중이면 잠시 대기 (최대 2초)
+        if (isSyncing) {
+          console.log('동기화 대기 중...');
+          let waitCount = 0;
+          while (isSyncing && waitCount < 20) {
+            await new Promise(resolve => setTimeout(resolve, 100));
+            waitCount++;
+          }
+          if (isSyncing) {
+            console.warn('동기화 대기 시간 초과');
+            return false;
+          }
         }
 
         isSyncing = true;
         
+        console.log('Firebase에 데이터 저장 중...', {
+          notes: notes.length,
+          folders: folders.length,
+          dataSize: Math.round(dataStr.length / 1024) + 'KB'
+        });
+        
         const userDoc = window.firebaseDoc(window.firebaseDb, 'users', userId);
         await window.firebaseSetDoc(userDoc, profileData, { merge: true });
 
-        // 동기화 성공 시 마지막 동기화 데이터 저장
+        // 동기화 성공 시 마지막 동기화 데이터 저장 (로컬 저장소에도 저장)
         lastSyncedData = dataStr;
-        localStorage.setItem('firebase_last_updated', new Date().toISOString());
-        console.log('Firebase 동기화 성공');
+        try {
+          localStorage.setItem('firebase_last_synced_data', dataStr);
+          localStorage.setItem('firebase_last_updated', new Date().toISOString());
+        } catch (e) {
+          console.warn('lastSyncedData 저장 실패:', e);
+        }
+        
+        console.log('✅ Firebase 동기화 성공');
+        return true;
       } catch (error) {
-        console.error('Firebase 동기화 실패:', error);
-        showToast('동기화 실패: ' + error.message);
+        console.error('❌ Firebase 동기화 실패:', error);
+        console.error('에러 상세:', {
+          message: error.message,
+          code: error.code,
+          stack: error.stack
+        });
+        
+        // 에러 메시지를 사용자에게 표시
+        const errorMsg = error.message || '알 수 없는 오류';
+        showToast('동기화 실패: ' + errorMsg);
+        
+        // lastSyncedData는 유지하지 않음 (재시도 가능하도록)
+        return false;
       } finally {
         isSyncing = false;
       }
@@ -2308,14 +2353,24 @@
       console.log('로컬 저장 완료:', { text: value.substring(0, 50), images: imagesToSave.length });
       
       // Firebase 동기화 (모바일에서도 확실히 저장되도록 await)
-      if (isFirebaseEnabled() && !isSyncing) {
+      if (isFirebaseEnabled()) {
         try {
-          await syncToFirebase(notes);
-          console.log('✅ 메모가 Firebase에 저장되었습니다. (이미지 포함:', imagesToSave.length, '개)');
+          // 강제 동기화 (새 메모가 추가되었으므로)
+          const syncSuccess = await syncToFirebase(notes, true);
+          if (syncSuccess) {
+            console.log('✅ 메모가 Firebase에 저장되었습니다. (이미지 포함:', imagesToSave.length, '개)');
+            showToast('저장 완료');
+          } else {
+            console.warn('⚠️ Firebase 동기화 실패, 로컬에는 저장됨');
+            // 로컬에는 저장되었으므로 계속 진행
+          }
         } catch (err) {
           console.error('❌ Firebase 저장 실패:', err);
+          showToast('동기화 실패, 로컬에는 저장됨');
           // 저장 실패해도 로컬에는 저장되었으므로 계속 진행
         }
+      } else {
+        console.warn('Firebase가 활성화되지 않아 로컬 저장만 수행');
       }
       
       renderList(notes);

@@ -46,12 +46,11 @@ html, body {
 /* 모바일 전용 헤더 */
 .mobile-header {
   display: none;
-  position: sticky;
-  top: 0;
+  position: relative;
   width: 100%;
   background: transparent;
   border-bottom: none;
-  padding: 12px;
+  padding: 3px;
   z-index: 101;
   box-shadow: none;
 }
@@ -67,16 +66,16 @@ html, body {
   background: transparent;
   color: #888888;
   border: none;
-  border-radius: 8px;
-  padding: 8px 16px;
-  font-size: 14px;
+  border-radius: 6px;
+  padding: 3px 10px;
+  font-size: 12px;
   font-weight: 400;
   cursor: pointer;
   display: flex;
   align-items: center;
   justify-content: center;
-  min-width: 60px;
-  height: 36px;
+  min-width: 45px;
+  height: 20px;
 }
 
 .mobile-transparency-btn:hover {
@@ -369,10 +368,10 @@ html, body {
   align-items: flex-start;
 }
 
-/* 모바일에서 composer가 헤더 아래에 위치하도록 */
+/* 모바일에서 composer만 상단 고정 */
 @media (max-width: 768px) {
   .composer {
-    top: 60px; /* 모바일 헤더 높이만큼 아래로 */
+    top: 0; /* 헤더가 고정되지 않으므로 상단에 고정 */
   }
 }
 
@@ -1293,10 +1292,13 @@ label.btn-icon {
   .selection-mode .bulk-actions {
     display: flex !important;
   }
-  /* composer의 흰색 네모 조정 */
+  /* composer의 흰색 네모 조정 (PC와 동일하게 확장) */
   .composer::before {
-    left: 0 !important;
-    width: 100% !important;
+    left: -16px !important;
+    width: calc(100% + 32px) !important;
+    height: calc(100% - 7px) !important;
+    background: #ffffff !important;
+    border-radius: 12px !important;
   }
   /* 모바일에서도 가로 레이아웃 유지 */
   .composer {
@@ -1418,8 +1420,11 @@ body.mobile-device.selection-mode .bulk-actions {
 }
 
 body.mobile-device .composer::before {
-  left: 0 !important;
-  width: 100% !important;
+  left: -16px !important;
+  width: calc(100% + 32px) !important;
+  height: calc(100% - 7px) !important;
+  background: #ffffff !important;
+  border-radius: 12px !important;
 }
 
 @media (max-width: 600px) {

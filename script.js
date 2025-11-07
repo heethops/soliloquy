@@ -461,12 +461,15 @@
         
         const dataStr = JSON.stringify(profileData);
         
-        // forceSync가 true이거나 데이터가 변경된 경우에만 동기화
+        // forceSync가 true이면 무조건 저장 (글 작성 시)
+        // forceSync가 false일 때만 데이터 변경 확인
         if (!forceSync && lastSyncedData === dataStr) {
           // 데이터가 변경되지 않았으면 동기화하지 않음 (quota 절약)
           console.log('데이터 변경 없음, 동기화 스킵');
           return true; // 스킵했지만 성공으로 간주
         }
+        
+        // forceSync일 때는 lastSyncedData 체크 무시하고 무조건 저장
 
         // 동기화 중이면 잠시 대기 (최대 2초)
         if (isSyncing) {
@@ -510,6 +513,7 @@
         console.log('Firebase setDoc 완료');
 
         // 동기화 성공 시 마지막 동기화 데이터 저장 (로컬 저장소에도 저장)
+        // forceSync일 때는 무조건 업데이트
         lastSyncedData = dataStr;
         try {
           localStorage.setItem('firebase_last_synced_data', dataStr);
@@ -518,7 +522,10 @@
           console.warn('lastSyncedData 저장 실패:', e);
         }
         
-        console.log('✅ Firebase 동기화 성공');
+        console.log('✅ Firebase 동기화 성공', {
+          notesCount: notes.length,
+          forceSync: forceSync
+        });
         return true;
       } catch (error) {
         console.error('❌ Firebase 동기화 실패:', error);
@@ -2355,7 +2362,7 @@
       updateTotalNotesCount();
       console.log('로컬 저장 완료:', { text: value.substring(0, 50), images: imagesToSave.length });
       
-      // Firebase 동기화 (모바일에서도 확실히 저장되도록 await)
+      // Firebase 동기화 - 글 작성 시 무조건 즉시 저장
       if (isFirebaseEnabled()) {
         try {
           // 이미지가 포함된 경우 데이터 크기 확인
@@ -2372,37 +2379,44 @@
             }
           }
           
-          // 강제 동기화 (새 메모가 추가되었으므로)
-          console.log('Firebase 동기화 시작...', {
+          // 강제 동기화 (새 메모가 추가되었으므로 무조건 저장)
+          console.log('🔥 Firebase 즉시 동기화 시작...', {
             notesCount: notes.length,
             imagesCount: imagesToSave.length,
-            hasText: !!value
+            hasText: !!value,
+            isFirebaseReady: window.firebaseReady,
+            hasDb: !!window.firebaseDb
           });
           
+          // forceSync: true로 무조건 저장
           const syncSuccess = await syncToFirebase(notes, true);
           if (syncSuccess) {
-            console.log('✅ 메모가 Firebase에 저장되었습니다. (이미지 포함:', imagesToSave.length, '개)');
+            console.log('✅✅✅ 메모가 Firebase에 저장되었습니다! (이미지 포함:', imagesToSave.length, '개)');
             showToast('저장 완료');
           } else {
-            console.error('❌ Firebase 동기화 실패, 로컬에는 저장됨');
+            console.error('❌❌❌ Firebase 동기화 실패, 로컬에는 저장됨');
             showToast('동기화 실패, 로컬에는 저장됨');
             // 로컬에는 저장되었으므로 계속 진행
           }
         } catch (err) {
-          console.error('❌ Firebase 저장 중 에러 발생:', err);
+          console.error('❌❌❌ Firebase 저장 중 에러 발생:', err);
           console.error('에러 상세:', {
             message: err.message,
             code: err.code,
-            stack: err.stack
+            stack: err.stack,
+            name: err.name
           });
           showToast('동기화 실패: ' + (err.message || '알 수 없는 오류'));
           // 저장 실패해도 로컬에는 저장되었으므로 계속 진행
         }
       } else {
-        console.warn('Firebase가 활성화되지 않아 로컬 저장만 수행', {
+        console.error('❌ Firebase가 활성화되지 않음!', {
           firebaseReady: window.firebaseReady,
-          hasDb: !!window.firebaseDb
+          hasDb: !!window.firebaseDb,
+          hasDoc: !!window.firebaseDoc,
+          hasSetDoc: !!window.firebaseSetDoc
         });
+        showToast('Firebase 연결 실패');
       }
       
       renderList(notes);
@@ -3503,7 +3517,7 @@
       });
     }
     
-    // Firebase 동기화 초기화 (quota 절약: 실시간 리스너 사용 안 함)
+    // Firebase 동기화 초기화 (새로고침 시 Firebase에서 데이터 가져오기)
     function initFirebaseSync() {
       if (!isFirebaseEnabled()) {
         console.warn('Firebase 동기화가 활성화되지 않았습니다.');
@@ -3515,95 +3529,23 @@
         userId: getUserId() // 고정 ID
       });
       
-      // 초기 동기화 (읽기 1회) - 새로고침 시에만 Firebase에서 최신 데이터 가져오기
+      // 새로고침 시 Firebase에서 데이터 가져오기 (비교 없이)
       syncFromFirebase().then(cloudNotes => {
-        const currentLocalNotes = loadNotes();
-        
-        const localCount = currentLocalNotes ? currentLocalNotes.length : 0;
-        const cloudCount = cloudNotes ? cloudNotes.length : 0;
-        
-        console.log('데이터 비교:', {
-          local: localCount,
-          cloud: cloudCount,
-          more: localCount > cloudCount ? 'local' : 'cloud'
-        });
-        
-        // 총 메모 수가 더 많은 쪽을 선택
-        let selectedNotes = null;
-        let source = '';
-        
-        if (localCount > cloudCount) {
-          // 로컬이 더 많으면 로컬 사용
-          selectedNotes = currentLocalNotes;
-          source = 'local';
-          console.log('✅ 로컬 데이터 선택 (더 많은 메모:', localCount, '개)');
-        } else if (cloudCount > localCount) {
-          // Firebase가 더 많으면 Firebase 사용
-          selectedNotes = cloudNotes;
-          source = 'cloud';
-          console.log('✅ Firebase 데이터 선택 (더 많은 메모:', cloudCount, '개)');
-        } else if (localCount === cloudCount && localCount > 0) {
-          // 개수가 같으면 병합 (최신 것 우선)
-          const localNotesMap = new Map(currentLocalNotes.map(n => [n.id, n]));
-          const cloudNotesMap = new Map(cloudNotes.map(n => [n.id, n]));
-          
-          const allNoteIds = new Set([...localNotesMap.keys(), ...cloudNotesMap.keys()]);
-          const mergedNotes = [];
-          
-          for (const id of allNoteIds) {
-            const localNote = localNotesMap.get(id);
-            const cloudNote = cloudNotesMap.get(id);
-            
-            if (localNote && cloudNote) {
-              // 둘 다 있으면 더 최신 것 사용
-              const localTime = new Date(localNote.createdAt).getTime();
-              const cloudTime = new Date(cloudNote.createdAt).getTime();
-              mergedNotes.push(localTime >= cloudTime ? localNote : cloudNote);
-            } else if (localNote) {
-              mergedNotes.push(localNote);
-            } else if (cloudNote) {
-              mergedNotes.push(cloudNote);
-            }
-          }
-          
-          mergedNotes.sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
-          selectedNotes = mergedNotes;
-          source = 'merged';
-          console.log('✅ 데이터 병합 (개수 동일:', localCount, '개)');
+        if (cloudNotes && cloudNotes.length > 0) {
+          // Firebase에서 가져온 데이터로 로컬 업데이트 (비교 없음)
+          localStorage.setItem(STORAGE_KEY, JSON.stringify(cloudNotes));
+          renderList(cloudNotes);
+          console.log('✅ Firebase에서 데이터 가져옴:', cloudNotes.length, '개 메모');
         } else {
-          // 둘 다 비어있음
-          console.log('로컬과 Firebase 모두 비어있습니다.');
-          return;
-        }
-        
-        // 선택한 데이터로 업데이트
-        if (selectedNotes && selectedNotes.length > 0) {
-          const currentDataStr = JSON.stringify(currentLocalNotes);
-          const selectedDataStr = JSON.stringify(selectedNotes);
-          
-          if (currentDataStr !== selectedDataStr) {
-            localStorage.setItem(STORAGE_KEY, JSON.stringify(selectedNotes));
-            renderList(selectedNotes);
-            
-            // 선택한 데이터를 Firebase에 저장 (동기화)
-            syncToFirebase(selectedNotes).catch(err => {
-              console.error('선택한 데이터를 Firebase에 저장 실패:', err);
+          // Firebase에 데이터가 없으면 로컬 데이터를 Firebase에 저장
+          const localNotes = loadNotes();
+          if (localNotes && localNotes.length > 0) {
+            syncToFirebase(localNotes, true).catch(err => {
+              console.error('로컬 데이터를 Firebase에 저장 실패:', err);
             });
-            
-            console.log('데이터 업데이트 완료:', {
-              source: source,
-              count: selectedNotes.length
-            });
-          } else {
-            console.log('데이터가 이미 동일합니다.');
           }
-        } else if (currentLocalNotes && currentLocalNotes.length > 0) {
-          // 로컬에만 데이터가 있으면 Firebase에 저장
-          syncToFirebase(currentLocalNotes).catch(err => {
-            console.error('로컬 데이터를 Firebase에 저장 실패:', err);
-          });
+          console.log('Firebase에 데이터 없음, 로컬 데이터 유지');
         }
-        // 정기 동기화 제거 - 변경 이벤트 발생 시에만 동기화
       }).catch((error) => {
         console.error('Firebase 동기화 오류:', error);
         // 에러가 발생해도 로컬 데이터는 이미 표시되었으므로 계속 사용

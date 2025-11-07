@@ -2,7 +2,7 @@
   const STORAGE_KEY = 'timestamped_notes_v1';
   const FOLDERS_KEY = 'folders_v1';
   const PROFILE_BIO_KEY = 'profile_bio_v1';
-    const PROFILE_IMAGE_KEY = 'profile_image_v1';
+  const PROFILE_IMAGE_KEY = 'profile_image_v1';
     const GITHUB_TOKEN_KEY = 'github_token';
     const GITHUB_REPO_KEY = 'github_repo';
   const PROFILE_NAME_KEY = 'profile_name_v1';
@@ -1815,6 +1815,9 @@
 
     /** 타래 모드 상태 */
     let threadParentId = null;
+    
+    /** Shift 연속 선택을 위한 마지막 선택 인덱스 */
+    let lastSelectedIndex = null;
 
     function toggleSelect(id, checked) {
       if (checked) selectedIds.add(id); else selectedIds.delete(id);
@@ -1897,6 +1900,7 @@
         editingIds.clear();
         editDraft.clear();
         threadParentId = null;
+        lastSelectedIndex = null; // Shift 선택 인덱스 초기화
         updateThreadMode();
       }
       renderList(loadNotes());
@@ -2137,8 +2141,301 @@
       const checkbox = document.createElement('input');
       checkbox.type = 'checkbox';
       checkbox.checked = selectedIds.has(note.id);
-      checkbox.addEventListener('change', function () {
-        toggleSelect(note.id, checkbox.checked);
+      checkbox.addEventListener('click', function (e) {
+        // Shift 클릭: 범위 선택
+        if (e.shiftKey && lastSelectedIndex !== null) {
+          e.preventDefault();
+          // 현재 필터링된 노트 목록 가져오기
+          const notes = loadNotes();
+          let filtered = notes;
+          
+          // 날짜 필터 적용
+          if (selectedDates.length > 0) {
+            const selectedDateStrs = new Set(selectedDates.map(d => formatDate(d)));
+            filtered = filtered.filter(n => {
+              const noteDateStr = formatDate(new Date(n.createdAt));
+              return selectedDateStrs.has(noteDateStr);
+            });
+          }
+          
+          // 폴더 필터 적용
+          if (selectedFolderIds.size > 0) {
+            const hasPhotoFolder = selectedFolderIds.has(PHOTO_FOLDER_ID);
+            const otherFolders = Array.from(selectedFolderIds).filter(id => id !== PHOTO_FOLDER_ID);
+            
+            if (hasPhotoFolder && otherFolders.length === 0) {
+              filtered = filtered.filter(n => {
+                const hasImages = (n.images && n.images.length > 0) || n.imageData;
+                return hasImages;
+              });
+            } else {
+              const allChildNotesMap = new Map();
+              filtered.forEach(n => {
+                if (n.parentId) {
+                  if (!allChildNotesMap.has(n.parentId)) {
+                    allChildNotesMap.set(n.parentId, []);
+                  }
+                  allChildNotesMap.get(n.parentId).push(n);
+                }
+              });
+              
+              const matchingNotes = new Set();
+              filtered.forEach(n => {
+                if (hasPhotoFolder) {
+                  const hasImages = (n.images && n.images.length > 0) || n.imageData;
+                  if (hasImages) {
+                    matchingNotes.add(n.id);
+                    if (n.parentId) matchingNotes.add(n.parentId);
+                    const children = allChildNotesMap.get(n.id) || [];
+                    children.forEach(child => matchingNotes.add(child.id));
+                  }
+                }
+                if (n.folderIds && otherFolders.length > 0) {
+                  const hasMatchingFolder = otherFolders.some(folderId => n.folderIds.includes(folderId));
+                  if (hasMatchingFolder) {
+                    matchingNotes.add(n.id);
+                    if (n.parentId) matchingNotes.add(n.parentId);
+                    const children = allChildNotesMap.get(n.id) || [];
+                    children.forEach(child => matchingNotes.add(child.id));
+                  }
+                }
+              });
+              filtered = filtered.filter(n => matchingNotes.has(n.id));
+            }
+          }
+          
+          // 검색 필터 적용
+          if (searchQuery && searchQuery.trim() !== '') {
+            const q = searchQuery.trim().toLowerCase();
+            const allChildNotesMap = new Map();
+            notes.forEach(n => {
+              if (n.parentId) {
+                if (!allChildNotesMap.has(n.parentId)) {
+                  allChildNotesMap.set(n.parentId, []);
+                }
+                allChildNotesMap.get(n.parentId).push(n);
+              }
+            });
+            
+            const matchingNotes = new Set();
+            filtered.forEach(n => {
+              if ((n.text || '').toLowerCase().includes(q)) {
+                matchingNotes.add(n.id);
+                if (n.parentId) matchingNotes.add(n.parentId);
+                const children = allChildNotesMap.get(n.id) || [];
+                children.forEach(child => matchingNotes.add(child.id));
+              }
+            });
+            filtered = filtered.filter(n => matchingNotes.has(n.id));
+          }
+          
+          // 타래 구조 정리 후 부모 노트만 추출 (체크박스는 부모 노트에만 있음)
+          const finalParentNotes = filtered.filter(n => !n.parentId);
+          const finalChildNotesMap = new Map();
+          filtered.forEach(n => {
+            if (n.parentId) {
+              const parentExists = filtered.some(p => p.id === n.parentId);
+              if (parentExists) {
+                if (!finalChildNotesMap.has(n.parentId)) {
+                  finalChildNotesMap.set(n.parentId, []);
+                }
+                finalChildNotesMap.get(n.parentId).push(n);
+              }
+            }
+          });
+          
+          // 타래가 있는 부모 글은 가장 최신 타래 시간 기준으로 정렬
+          const sorted = [...finalParentNotes].sort((a, b) => {
+            const aChildren = finalChildNotesMap.get(a.id) || [];
+            const bChildren = finalChildNotesMap.get(b.id) || [];
+            
+            function getLatestThreadTime(parentId, map) {
+              const children = map.get(parentId) || [];
+              if (children.length === 0) return 0;
+              let latest = 0;
+              for (const child of children) {
+                const childTime = new Date(child.createdAt).getTime();
+                if (childTime > latest) latest = childTime;
+                const nestedLatest = getLatestThreadTime(child.id, map);
+                if (nestedLatest > latest) latest = nestedLatest;
+              }
+              return latest;
+            }
+            
+            const aLatestThread = getLatestThreadTime(a.id, finalChildNotesMap);
+            const bLatestThread = getLatestThreadTime(b.id, finalChildNotesMap);
+            
+            const aTime = aLatestThread > 0 ? aLatestThread : new Date(a.createdAt).getTime();
+            const bTime = bLatestThread > 0 ? bLatestThread : new Date(b.createdAt).getTime();
+            
+            return bTime - aTime;
+          });
+          
+          // 현재 노트의 인덱스 찾기
+          const currentIndex = sorted.findIndex(n => n.id === note.id);
+          
+          if (currentIndex !== -1) {
+            const start = Math.min(lastSelectedIndex, currentIndex);
+            const end = Math.max(lastSelectedIndex, currentIndex);
+            
+            // 범위 내 모든 노트 선택/해제 (첫 번째 선택 상태 기준)
+            const firstNote = sorted[lastSelectedIndex];
+            const shouldSelect = !selectedIds.has(firstNote.id);
+            
+            for (let i = start; i <= end; i++) {
+              const rangeNote = sorted[i];
+              if (shouldSelect) {
+                selectedIds.add(rangeNote.id);
+              } else {
+                selectedIds.delete(rangeNote.id);
+              }
+            }
+            
+            // 단일 선택 시 타래 모드 활성화
+            if (selectedIds.size === 1) {
+              const singleId = Array.from(selectedIds)[0];
+              threadParentId = singleId;
+              updateThreadMode();
+            } else {
+              threadParentId = null;
+              updateThreadMode();
+            }
+            
+            updateBulkState();
+            renderList(notes);
+            lastSelectedIndex = currentIndex;
+          }
+        } else {
+          // 일반 클릭: 단일 선택/해제
+          const checked = !selectedIds.has(note.id);
+          toggleSelect(note.id, checked);
+          
+          // 현재 필터링된 노트 목록에서 인덱스 찾기
+          const notes = loadNotes();
+          let filtered = notes;
+          
+          if (selectedDates.length > 0) {
+            const selectedDateStrs = new Set(selectedDates.map(d => formatDate(d)));
+            filtered = filtered.filter(n => {
+              const noteDateStr = formatDate(new Date(n.createdAt));
+              return selectedDateStrs.has(noteDateStr);
+            });
+          }
+          
+          if (selectedFolderIds.size > 0) {
+            const hasPhotoFolder = selectedFolderIds.has(PHOTO_FOLDER_ID);
+            const otherFolders = Array.from(selectedFolderIds).filter(id => id !== PHOTO_FOLDER_ID);
+            
+            if (hasPhotoFolder && otherFolders.length === 0) {
+              filtered = filtered.filter(n => {
+                const hasImages = (n.images && n.images.length > 0) || n.imageData;
+                return hasImages;
+              });
+            } else {
+              const allChildNotesMap = new Map();
+              filtered.forEach(n => {
+                if (n.parentId) {
+                  if (!allChildNotesMap.has(n.parentId)) {
+                    allChildNotesMap.set(n.parentId, []);
+                  }
+                  allChildNotesMap.get(n.parentId).push(n);
+                }
+              });
+              
+              const matchingNotes = new Set();
+              filtered.forEach(n => {
+                if (hasPhotoFolder) {
+                  const hasImages = (n.images && n.images.length > 0) || n.imageData;
+                  if (hasImages) {
+                    matchingNotes.add(n.id);
+                    if (n.parentId) matchingNotes.add(n.parentId);
+                    const children = allChildNotesMap.get(n.id) || [];
+                    children.forEach(child => matchingNotes.add(child.id));
+                  }
+                }
+                if (n.folderIds && otherFolders.length > 0) {
+                  const hasMatchingFolder = otherFolders.some(folderId => n.folderIds.includes(folderId));
+                  if (hasMatchingFolder) {
+                    matchingNotes.add(n.id);
+                    if (n.parentId) matchingNotes.add(n.parentId);
+                    const children = allChildNotesMap.get(n.id) || [];
+                    children.forEach(child => matchingNotes.add(child.id));
+                  }
+                }
+              });
+              filtered = filtered.filter(n => matchingNotes.has(n.id));
+            }
+          }
+          
+          if (searchQuery && searchQuery.trim() !== '') {
+            const q = searchQuery.trim().toLowerCase();
+            const allChildNotesMap = new Map();
+            notes.forEach(n => {
+              if (n.parentId) {
+                if (!allChildNotesMap.has(n.parentId)) {
+                  allChildNotesMap.set(n.parentId, []);
+                }
+                allChildNotesMap.get(n.parentId).push(n);
+              }
+            });
+            
+            const matchingNotes = new Set();
+            filtered.forEach(n => {
+              if ((n.text || '').toLowerCase().includes(q)) {
+                matchingNotes.add(n.id);
+                if (n.parentId) matchingNotes.add(n.parentId);
+                const children = allChildNotesMap.get(n.id) || [];
+                children.forEach(child => matchingNotes.add(child.id));
+              }
+            });
+            filtered = filtered.filter(n => matchingNotes.has(n.id));
+          }
+          
+          const finalParentNotes = filtered.filter(n => !n.parentId);
+          const finalChildNotesMap = new Map();
+          filtered.forEach(n => {
+            if (n.parentId) {
+              const parentExists = filtered.some(p => p.id === n.parentId);
+              if (parentExists) {
+                if (!finalChildNotesMap.has(n.parentId)) {
+                  finalChildNotesMap.set(n.parentId, []);
+                }
+                finalChildNotesMap.get(n.parentId).push(n);
+              }
+            }
+          });
+          
+          const sorted = [...finalParentNotes].sort((a, b) => {
+            const aChildren = finalChildNotesMap.get(a.id) || [];
+            const bChildren = finalChildNotesMap.get(b.id) || [];
+            
+            function getLatestThreadTime(parentId, map) {
+              const children = map.get(parentId) || [];
+              if (children.length === 0) return 0;
+              let latest = 0;
+              for (const child of children) {
+                const childTime = new Date(child.createdAt).getTime();
+                if (childTime > latest) latest = childTime;
+                const nestedLatest = getLatestThreadTime(child.id, map);
+                if (nestedLatest > latest) latest = nestedLatest;
+              }
+              return latest;
+            }
+            
+            const aLatestThread = getLatestThreadTime(a.id, finalChildNotesMap);
+            const bLatestThread = getLatestThreadTime(b.id, finalChildNotesMap);
+            
+            const aTime = aLatestThread > 0 ? aLatestThread : new Date(a.createdAt).getTime();
+            const bTime = bLatestThread > 0 ? bLatestThread : new Date(b.createdAt).getTime();
+            
+            return bTime - aTime;
+          });
+          
+          const currentIndex = sorted.findIndex(n => n.id === note.id);
+          if (currentIndex !== -1) {
+            lastSelectedIndex = currentIndex;
+          }
+        }
       });
       selWrap.appendChild(checkbox);
       

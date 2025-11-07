@@ -1039,8 +1039,11 @@
         const repo = localStorage.getItem(GITHUB_REPO_KEY);
         
         if (!token || !repo) {
+          console.log('GitHub 설정이 없어 favicon 업데이트를 스킵합니다.');
           return; // GitHub 설정이 없으면 스킵
         }
+        
+        console.log('GitHub Pages favicon 업데이트 시작...', { repo });
         
         // 32x32 크기의 favicon 생성
         const img = new Image();
@@ -1054,7 +1057,10 @@
           ctx.drawImage(img, 0, 0, 32, 32);
           
           canvas.toBlob(async function(blob) {
-            if (!blob) return;
+            if (!blob) {
+              console.error('Favicon blob 생성 실패');
+              return;
+            }
             
             // Base64로 변환
             const reader = new FileReader();
@@ -1065,10 +1071,13 @@
                 // GitHub API로 파일 업데이트
                 // 먼저 기존 파일 정보 가져오기
                 const getFileUrl = `https://api.github.com/repos/${repo}/contents/favicon.ico`;
+                console.log('기존 favicon.ico 확인 중...', getFileUrl);
+                
                 const getResponse = await fetch(getFileUrl, {
                   headers: {
-                    'Authorization': `token ${token}`,
-                    'Accept': 'application/vnd.github.v3+json'
+                    'Authorization': `Bearer ${token}`, // 최신 형식 사용
+                    'Accept': 'application/vnd.github.v3+json',
+                    'X-GitHub-Api-Version': '2022-11-28'
                   }
                 });
                 
@@ -1076,41 +1085,63 @@
                 if (getResponse.ok) {
                   const fileData = await getResponse.json();
                   sha = fileData.sha;
+                  console.log('기존 favicon.ico 발견, 업데이트 모드');
+                } else if (getResponse.status === 404) {
+                  console.log('기존 favicon.ico 없음, 새로 생성');
+                } else {
+                  const error = await getResponse.json();
+                  console.error('기존 파일 확인 실패:', error);
                 }
                 
                 // 파일 업데이트 또는 생성
                 const putUrl = `https://api.github.com/repos/${repo}/contents/favicon.ico`;
+                console.log('favicon.ico 업로드 중...', putUrl);
+                
                 const putResponse = await fetch(putUrl, {
                   method: 'PUT',
                   headers: {
-                    'Authorization': `token ${token}`,
+                    'Authorization': `Bearer ${token}`, // 최신 형식 사용
                     'Accept': 'application/vnd.github.v3+json',
-                    'Content-Type': 'application/json'
+                    'Content-Type': 'application/json',
+                    'X-GitHub-Api-Version': '2022-11-28'
                   },
                   body: JSON.stringify({
                     message: 'Update favicon from profile image',
                     content: base64Data,
-                    sha: sha
+                    sha: sha // sha가 null이면 새로 생성, 있으면 업데이트
                   })
                 });
                 
                 if (putResponse.ok) {
-                  console.log('✅ GitHub Pages favicon 업데이트 완료');
+                  const result = await putResponse.json();
+                  console.log('✅ GitHub Pages favicon 업데이트 완료', result);
+                  showToast('GitHub Pages favicon이 업데이트되었습니다.');
+                  
+                  // GitHub Pages가 자동으로 배포되므로 약간의 시간이 걸릴 수 있음
+                  console.log('참고: GitHub Pages 배포에는 몇 분이 걸릴 수 있습니다.');
                 } else {
                   const error = await putResponse.json();
                   console.error('GitHub favicon 업데이트 실패:', error);
-                  // 조용히 실패 처리 (토스트 없이)
+                  showToast('GitHub favicon 업데이트 실패: ' + (error.message || '알 수 없는 오류'));
                 }
               } catch (error) {
                 console.error('GitHub favicon 업데이트 오류:', error);
+                showToast('GitHub favicon 업데이트 중 오류가 발생했습니다.');
               }
+            };
+            reader.onerror = function() {
+              console.error('FileReader 오류');
             };
             reader.readAsDataURL(blob);
           }, 'image/png');
         };
+        img.onerror = function() {
+          console.error('이미지 로드 실패');
+        };
         img.src = imageData;
       } catch (error) {
         console.error('GitHub favicon 업데이트 실패:', error);
+        showToast('GitHub favicon 업데이트 중 오류가 발생했습니다.');
       }
     }
 

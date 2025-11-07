@@ -928,52 +928,87 @@
           ogCtx.drawImage(img, 0, 0, ogSize, ogSize);
           const ogDataUrl = ogCanvas.toDataURL('image/png');
 
-          // Favicon 업데이트 (기존 링크 태그가 있으면 업데이트, 없으면 생성)
+          // Favicon 업데이트 (브라우저 캐시 문제 해결을 위해 기존 링크 제거 후 재생성)
           let faviconLink = document.getElementById('favicon');
-          if (!faviconLink) {
-            faviconLink = document.createElement('link');
-            faviconLink.id = 'favicon';
-            faviconLink.rel = 'icon';
-            faviconLink.type = 'image/png';
-            document.head.appendChild(faviconLink);
+          if (faviconLink) {
+            faviconLink.remove();
           }
+          faviconLink = document.createElement('link');
+          faviconLink.id = 'favicon';
+          faviconLink.rel = 'icon';
+          faviconLink.type = 'image/png';
           faviconLink.href = faviconDataUrl;
+          document.head.appendChild(faviconLink);
+          
+          // 짧은 딜레이 후 다시 설정하여 브라우저가 강제로 다시 로드하도록 함
+          setTimeout(() => {
+            if (faviconLink) {
+              const href = faviconLink.href;
+              faviconLink.href = '';
+              setTimeout(() => {
+                faviconLink.href = href;
+              }, 10);
+            }
+          }, 100);
 
-          // Apple Touch Icon 업데이트 (기존 링크 태그가 있으면 업데이트, 없으면 생성)
+          // Apple Touch Icon 업데이트 (브라우저 캐시 문제 해결을 위해 기존 링크 제거 후 재생성)
           let appleTouchIconLink = document.getElementById('apple-touch-icon');
-          if (!appleTouchIconLink) {
-            appleTouchIconLink = document.createElement('link');
-            appleTouchIconLink.id = 'apple-touch-icon';
-            appleTouchIconLink.rel = 'apple-touch-icon';
-            document.head.appendChild(appleTouchIconLink);
+          if (appleTouchIconLink) {
+            appleTouchIconLink.remove();
           }
+          appleTouchIconLink = document.createElement('link');
+          appleTouchIconLink.id = 'apple-touch-icon';
+          appleTouchIconLink.rel = 'apple-touch-icon';
           appleTouchIconLink.href = appleDataUrl;
+          document.head.appendChild(appleTouchIconLink);
+          
+          // 짧은 딜레이 후 다시 설정하여 브라우저가 강제로 다시 로드하도록 함
+          setTimeout(() => {
+            if (appleTouchIconLink) {
+              const href = appleTouchIconLink.href;
+              appleTouchIconLink.href = '';
+              setTimeout(() => {
+                appleTouchIconLink.href = href;
+              }, 10);
+            }
+          }, 100);
 
-          // Open Graph Image 업데이트
+          // Open Graph Image 업데이트 (기존 메타 태그 제거 후 재생성)
           let ogImageMeta = document.getElementById('og-image');
-          if (!ogImageMeta) {
-            ogImageMeta = document.createElement('meta');
-            ogImageMeta.id = 'og-image';
-            ogImageMeta.property = 'og:image';
-            document.head.appendChild(ogImageMeta);
+          if (ogImageMeta) {
+            ogImageMeta.remove();
           }
+          ogImageMeta = document.createElement('meta');
+          ogImageMeta.id = 'og-image';
+          ogImageMeta.property = 'og:image';
           ogImageMeta.content = ogDataUrl;
+          document.head.appendChild(ogImageMeta);
 
-          // Twitter Image 업데이트
+          // Twitter Image 업데이트 (기존 메타 태그 제거 후 재생성)
           let twitterImageMeta = document.getElementById('twitter-image');
-          if (!twitterImageMeta) {
-            twitterImageMeta = document.createElement('meta');
-            twitterImageMeta.id = 'twitter-image';
-            twitterImageMeta.name = 'twitter:image';
-            document.head.appendChild(twitterImageMeta);
+          if (twitterImageMeta) {
+            twitterImageMeta.remove();
           }
+          twitterImageMeta = document.createElement('meta');
+          twitterImageMeta.id = 'twitter-image';
+          twitterImageMeta.name = 'twitter:image';
           twitterImageMeta.content = ogDataUrl;
+          document.head.appendChild(twitterImageMeta);
+          
+          // 추가: 모든 favicon 링크 찾아서 업데이트 (브라우저 호환성)
+          const allFavicons = document.querySelectorAll('link[rel*="icon"]');
+          allFavicons.forEach(link => {
+            if (link.id !== 'favicon' && link.id !== 'apple-touch-icon') {
+              link.href = faviconDataUrl;
+            }
+          });
 
           console.log('✅ Favicon 및 메타 태그 아이콘이 프로필 이미지로 업데이트되었습니다');
         };
-        img.onerror = function() {
-          console.warn('프로필 이미지를 아이콘으로 변환 실패');
+        img.onerror = function(error) {
+          console.warn('프로필 이미지를 아이콘으로 변환 실패:', error);
         };
+        // Base64 데이터 URL이므로 crossOrigin 설정 불필요
         img.src = imageData;
       } catch (error) {
         console.error('아이콘 업데이트 오류:', error);
@@ -1005,6 +1040,10 @@
         if (isFirebaseEnabled() && !isSyncing) {
           syncProfileToFirebase();
         }
+        // 자동으로 ICO 파일 저장 (조용히, 토스트 없이)
+        setTimeout(() => {
+          exportProfileImageToICO(true);
+        }, 500); // favicon 업데이트 후 약간의 딜레이를 두고 ICO 저장
       } catch {
         // 저장 실패 시 무시
       }
@@ -1028,6 +1067,144 @@
       } catch {
         // 삭제 실패 시 무시
       }
+    }
+
+    // ICO 파일 생성 및 다운로드
+    function exportProfileImageToICO(silent = false) {
+      try {
+        const imageData = localStorage.getItem(PROFILE_IMAGE_KEY);
+        if (!imageData) {
+          if (!silent) {
+            showToast('프로필 이미지가 없습니다.');
+          }
+          return;
+        }
+
+        const img = new Image();
+        img.onload = function() {
+          // 여러 크기의 ICO 생성 (16x16, 32x32, 48x48)
+          const sizes = [16, 32, 48];
+          const iconEntries = [];
+
+          sizes.forEach(size => {
+            const canvas = document.createElement('canvas');
+            canvas.width = size;
+            canvas.height = size;
+            const ctx = canvas.getContext('2d');
+            ctx.drawImage(img, 0, 0, size, size);
+            
+            // PNG로 변환
+            const pngData = canvas.toDataURL('image/png');
+            // Base64 디코드
+            const base64Data = pngData.split(',')[1];
+            const binaryString = atob(base64Data);
+            const bytes = new Uint8Array(binaryString.length);
+            for (let i = 0; i < binaryString.length; i++) {
+              bytes[i] = binaryString.charCodeAt(i);
+            }
+            
+            iconEntries.push({
+              width: size,
+              height: size,
+              data: bytes
+            });
+          });
+
+          // ICO 파일 생성
+          const icoFile = createICOFile(iconEntries);
+          
+          // 다운로드
+          const blob = new Blob([icoFile], { type: 'image/x-icon' });
+          const url = URL.createObjectURL(blob);
+          const a = document.createElement('a');
+          a.href = url;
+          a.download = 'favicon.ico';
+          document.body.appendChild(a);
+          a.click();
+          document.body.removeChild(a);
+          URL.revokeObjectURL(url);
+          
+          if (!silent) {
+            showToast('ICO 파일이 다운로드되었습니다.');
+          }
+        };
+        img.onerror = function() {
+          if (!silent) {
+            showToast('이미지를 변환할 수 없습니다.');
+          }
+        };
+        img.src = imageData;
+      } catch (error) {
+        console.error('ICO 파일 생성 실패:', error);
+        if (!silent) {
+          showToast('ICO 파일 생성에 실패했습니다.');
+        }
+      }
+    }
+
+    // ICO 파일 형식 생성 함수
+    function createICOFile(iconEntries) {
+      // ICO 파일 구조:
+      // Header (6 bytes)
+      // Icon Directory (16 bytes per entry)
+      // Icon Data (PNG data)
+      
+      const numIcons = iconEntries.length;
+      
+      // ICO Header (6 bytes)
+      const header = new ArrayBuffer(6);
+      const headerView = new DataView(header);
+      headerView.setUint16(0, 0, true); // Reserved (must be 0)
+      headerView.setUint16(2, 1, true); // Type (1 = ICO)
+      headerView.setUint16(4, numIcons, true); // Number of images
+      
+      // Icon Directory Entries (16 bytes each)
+      let offset = 6 + (numIcons * 16); // Start after header + directory
+      const directory = [];
+      
+      iconEntries.forEach(entry => {
+        const dirEntry = new ArrayBuffer(16);
+        const dirView = new DataView(dirEntry);
+        
+        // Width/Height (1 byte each, 0 = 256)
+        dirView.setUint8(0, entry.width === 256 ? 0 : entry.width);
+        dirView.setUint8(1, entry.height === 256 ? 0 : entry.height);
+        dirView.setUint8(2, 0); // Color palette (0 = no palette)
+        dirView.setUint8(3, 0); // Reserved
+        dirView.setUint16(4, 1, true); // Color planes (0 or 1)
+        dirView.setUint16(6, 32, true); // Bits per pixel
+        dirView.setUint32(8, entry.data.length, true); // Size of image data
+        dirView.setUint32(12, offset, true); // Offset of image data
+        
+        directory.push(dirEntry);
+        offset += entry.data.length;
+      });
+      
+      // Combine all parts
+      const totalSize = header.byteLength + 
+                       directory.reduce((sum, d) => sum + d.byteLength, 0) +
+                       iconEntries.reduce((sum, e) => sum + e.data.length, 0);
+      
+      const icoFile = new Uint8Array(totalSize);
+      let position = 0;
+      
+      // Write header
+      icoFile.set(new Uint8Array(header), position);
+      position += header.byteLength;
+      
+      // Write directory
+      directory.forEach(dirEntry => {
+        icoFile.set(new Uint8Array(dirEntry), position);
+        position += dirEntry.byteLength;
+      });
+      
+      // Write image data
+      iconEntries.forEach(entry => {
+        icoFile.set(entry.data, position);
+        position += entry.data.length;
+      });
+      
+      return icoFile.buffer;
     }
     
     function updateProfileBio() {

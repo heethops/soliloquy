@@ -46,7 +46,6 @@ html, body {
 /* 모바일 전용 헤더 */
 .mobile-header {
   display: none;
-  position: -webkit-sticky; /* Safari 호환성 */
   position: sticky;
   top: 0;
   width: 100%;
@@ -1257,19 +1256,9 @@ label.btn-icon {
   body > .main-header {
     display: none !important;
   }
-  /* 모바일 헤더 표시 및 sticky 확실히 적용 */
+  /* 모바일 헤더 표시 */
   .mobile-header {
     display: block !important;
-    position: -webkit-sticky !important;
-    position: sticky !important;
-    top: 0 !important;
-    z-index: 101 !important;
-  }
-  
-  /* body와 html이 sticky를 방해하지 않도록 */
-  html, body {
-    overflow-x: hidden;
-    overflow-y: auto;
   }
   /* composer와 글 목록만 전체 너비로 표시 */
   .main-content .notes-section {

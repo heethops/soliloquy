@@ -43,6 +43,51 @@ html, body {
   display: none;
 }
 
+/* 모바일 전용 헤더 */
+.mobile-header {
+  display: none;
+  position: -webkit-sticky; /* Safari 호환성 */
+  position: sticky;
+  top: 0;
+  width: 100%;
+  background: transparent;
+  border-bottom: none;
+  padding: 12px;
+  z-index: 101;
+  box-shadow: none;
+}
+
+#mobile-transparency-btn-container {
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  width: 100%;
+}
+
+.mobile-transparency-btn {
+  background: transparent;
+  color: #888888;
+  border: none;
+  border-radius: 8px;
+  padding: 8px 16px;
+  font-size: 14px;
+  font-weight: 400;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 60px;
+  height: 36px;
+}
+
+.mobile-transparency-btn:hover {
+  color: #666666;
+}
+
+.mobile-transparency-btn:active {
+  transform: translateY(1px);
+}
+
 .container {
   max-width: 1200px;
   margin: 0 auto;
@@ -320,6 +365,16 @@ html, body {
   width: 100%;
   backdrop-filter: blur(10px);
   -webkit-backdrop-filter: blur(10px);
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+}
+
+/* 모바일에서 composer가 헤더 아래에 위치하도록 */
+@media (max-width: 768px) {
+  .composer {
+    top: 60px; /* 모바일 헤더 높이만큼 아래로 */
+  }
 }
 
 .composer::after {
@@ -356,6 +411,8 @@ html, body {
   display: flex;
   flex-direction: column;
   gap: 10px;
+  flex: 1;
+  min-width: 0;
 }
 
 .thread-indicator {
@@ -424,9 +481,9 @@ html, body {
 
 .actions {
   display: flex;
-  justify-content: flex-end;
+  flex-direction: column;
   gap: 8px;
-  margin-top: 10px;
+  flex-shrink: 0;
 }
 
 .submit-btn {
@@ -1200,6 +1257,20 @@ label.btn-icon {
   body > .main-header {
     display: none !important;
   }
+  /* 모바일 헤더 표시 및 sticky 확실히 적용 */
+  .mobile-header {
+    display: block !important;
+    position: -webkit-sticky !important;
+    position: sticky !important;
+    top: 0 !important;
+    z-index: 101 !important;
+  }
+  
+  /* body와 html이 sticky를 방해하지 않도록 */
+  html, body {
+    overflow-x: hidden;
+    overflow-y: auto;
+  }
   /* composer와 글 목록만 전체 너비로 표시 */
   .main-content .notes-section {
     width: 100% !important;
@@ -1237,6 +1308,20 @@ label.btn-icon {
   .composer::before {
     left: 0 !important;
     width: 100% !important;
+  }
+  /* 모바일에서도 가로 레이아웃 유지 */
+  .composer {
+    display: flex !important;
+    flex-direction: row !important;
+    gap: 10px !important;
+  }
+  .input-container {
+    flex: 1 !important;
+    min-width: 0 !important;
+  }
+  .actions {
+    flex-direction: column !important;
+    flex-shrink: 0 !important;
   }
   /* 모바일 메뉴 스타일 */
   .note-context-menu {

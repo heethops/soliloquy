@@ -9,6 +9,9 @@
   <link id="favicon" rel="icon" type="image/png" href="">
   <link id="apple-touch-icon" rel="apple-touch-icon" href="">
   <meta id="theme-color" name="theme-color" content="#ffffff">
+  <!-- Open Graph / Twitter Card (동적으로 업데이트됨) -->
+  <meta id="og-image" property="og:image" content="">
+  <meta id="twitter-image" name="twitter:image" content="">
   <!-- Firebase SDK -->
   <script type="module">
     import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js';
@@ -74,6 +77,10 @@
 <body>
   <header class="main-header">
     <div id="last-updated" class="last-updated"></div>
+  </header>
+  <!-- 모바일 전용 헤더 -->
+  <header id="mobile-header" class="mobile-header" style="display: none;">
+    <div id="mobile-transparency-btn-container"></div>
   </header>
   <main class="container">
     <h1 class="visually-hidden">메모 타임스탬프 앱</h1>

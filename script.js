@@ -885,14 +885,18 @@
     }
 
     // 프로필 사진 로드
-    // 프로필 이미지를 favicon으로 설정
+    // 프로필 이미지를 favicon 및 메타 태그 아이콘으로 설정
     function updateFaviconFromProfileImage(imageData) {
       if (!imageData) {
         // 프로필 이미지가 없으면 기본 아이콘 사용 (또는 빈 상태 유지)
         const faviconLink = document.getElementById('favicon');
         const appleTouchIconLink = document.getElementById('apple-touch-icon');
+        const ogImageMeta = document.getElementById('og-image');
+        const twitterImageMeta = document.getElementById('twitter-image');
         if (faviconLink) faviconLink.href = '';
         if (appleTouchIconLink) appleTouchIconLink.href = '';
+        if (ogImageMeta) ogImageMeta.content = '';
+        if (twitterImageMeta) twitterImageMeta.content = '';
         return;
       }
 
@@ -915,6 +919,15 @@
           appleCtx.drawImage(img, 0, 0, 180, 180);
           const appleDataUrl = appleCanvas.toDataURL('image/png');
 
+          // Open Graph / Twitter Image 생성 (1200x630 권장, 하지만 원본 비율 유지)
+          const ogCanvas = document.createElement('canvas');
+          const ogSize = Math.min(img.width, img.height, 1200);
+          ogCanvas.width = ogSize;
+          ogCanvas.height = ogSize;
+          const ogCtx = ogCanvas.getContext('2d');
+          ogCtx.drawImage(img, 0, 0, ogSize, ogSize);
+          const ogDataUrl = ogCanvas.toDataURL('image/png');
+
           // Favicon 업데이트 (기존 링크 태그가 있으면 업데이트, 없으면 생성)
           let faviconLink = document.getElementById('favicon');
           if (!faviconLink) {
@@ -936,14 +949,34 @@
           }
           appleTouchIconLink.href = appleDataUrl;
 
-          console.log('✅ Favicon이 프로필 이미지로 업데이트되었습니다');
+          // Open Graph Image 업데이트
+          let ogImageMeta = document.getElementById('og-image');
+          if (!ogImageMeta) {
+            ogImageMeta = document.createElement('meta');
+            ogImageMeta.id = 'og-image';
+            ogImageMeta.property = 'og:image';
+            document.head.appendChild(ogImageMeta);
+          }
+          ogImageMeta.content = ogDataUrl;
+
+          // Twitter Image 업데이트
+          let twitterImageMeta = document.getElementById('twitter-image');
+          if (!twitterImageMeta) {
+            twitterImageMeta = document.createElement('meta');
+            twitterImageMeta.id = 'twitter-image';
+            twitterImageMeta.name = 'twitter:image';
+            document.head.appendChild(twitterImageMeta);
+          }
+          twitterImageMeta.content = ogDataUrl;
+
+          console.log('✅ Favicon 및 메타 태그 아이콘이 프로필 이미지로 업데이트되었습니다');
         };
         img.onerror = function() {
-          console.warn('프로필 이미지를 favicon으로 변환 실패');
+          console.warn('프로필 이미지를 아이콘으로 변환 실패');
         };
         img.src = imageData;
       } catch (error) {
-        console.error('Favicon 업데이트 오류:', error);
+        console.error('아이콘 업데이트 오류:', error);
       }
     }
 
@@ -3408,15 +3441,15 @@
           // CSS에서 이미 처리되므로 여기서는 추가 작업 불필요
         }
         
-        // 모바일: 파일 버튼 왼쪽에 투명화 버튼과 ID 변경 버튼 추가
-        const actionsDiv = document.querySelector('.actions');
-        const uploadBtn = document.getElementById('upload-btn');
-        if (actionsDiv && uploadBtn && !document.getElementById('mobile-transparency-btn')) {
+        // 모바일: 상단 헤더에 투명화 버튼 추가
+        const mobileHeader = document.getElementById('mobile-header');
+        const mobileTransparencyBtnContainer = document.getElementById('mobile-transparency-btn-container');
+        if (mobileHeader && mobileTransparencyBtnContainer && !document.getElementById('mobile-transparency-btn')) {
           // 투명화 버튼
           const transparencyBtn = document.createElement('button');
           transparencyBtn.id = 'mobile-transparency-btn';
           transparencyBtn.type = 'button';
-          transparencyBtn.className = 'btn mobile-action-btn';
+          transparencyBtn.className = 'mobile-transparency-btn';
           transparencyBtn.textContent = '투명';
           
           // 투명화 기능
@@ -3431,12 +3464,15 @@
           });
           
           syncTransparencyLabel();
-          actionsDiv.insertBefore(transparencyBtn, uploadBtn);
-          
-          // 사용자 ID 변경 버튼 제거됨
+          mobileTransparencyBtnContainer.appendChild(transparencyBtn);
+          mobileHeader.style.display = 'block';
         }
       } else {
-        // PC: 모바일 투명화 버튼과 ID 변경 버튼 제거
+        // PC: 모바일 헤더와 투명화 버튼 숨김
+        const mobileHeader = document.getElementById('mobile-header');
+        if (mobileHeader) {
+          mobileHeader.style.display = 'none';
+        }
         const mobileTransparencyBtn = document.getElementById('mobile-transparency-btn');
         if (mobileTransparencyBtn) {
           mobileTransparencyBtn.remove();

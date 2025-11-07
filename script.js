@@ -627,9 +627,11 @@
         console.log('Firebase에 저장 시도, userId:', userId);
         const dataDoc = window.firebaseDoc(window.firebaseDb, 'users', userId);
         
-        // 프로필 정보도 함께 저장
+        // 프로필 정보와 폴더도 함께 저장
+        const folders = loadFolders();
         const profileData = {
           notes: notes,
+          folders: folders,
           profileBio: localStorage.getItem(PROFILE_BIO_KEY) || '',
           profileName: localStorage.getItem(PROFILE_NAME_KEY) || '',
           profileImage: localStorage.getItem(PROFILE_IMAGE_KEY) || '',
@@ -703,6 +705,16 @@
             }
           }
           
+          // 폴더 동기화
+          if (data.folders && Array.isArray(data.folders)) {
+            isSyncing = true;
+            localStorage.setItem(FOLDERS_KEY, JSON.stringify(data.folders));
+            isSyncing = false;
+            console.log('Firebase에서 폴더 로드 성공:', data.folders.length, '개 폴더');
+            // 폴더 목록 UI 업데이트
+            renderFolders();
+          }
+          
           if (data.notes && Array.isArray(data.notes)) {
             isSyncing = true;
             localStorage.setItem(STORAGE_KEY, JSON.stringify(data.notes));
@@ -718,9 +730,11 @@
         
         // 현재 사용자 ID에 데이터가 없으면 로컬 데이터를 Firebase에 저장
         const localNotes = loadNotes();
-        if (localNotes.length > 0) {
-          console.log('로컬 데이터를 Firebase에 저장:', localNotes.length, '개');
+        const localFolders = loadFolders();
+        if (localNotes.length > 0 || localFolders.length > 0) {
+          console.log('로컬 데이터를 Firebase에 저장:', localNotes.length, '개 노트,', localFolders.length, '개 폴더');
           await syncToFirebase(localNotes);
+          await syncFoldersToFirebase(localFolders);
           return localNotes;
         }
       } catch (error) {
@@ -770,6 +784,16 @@
                 if (profileImg) profileImg.style.display = 'none';
                 if (profileImagePlaceholder) profileImagePlaceholder.style.display = 'block';
               }
+            }
+            
+            // 폴더 실시간 동기화
+            if (data.folders && Array.isArray(data.folders)) {
+              console.log('폴더 실시간 동기화 적용:', data.folders.length, '개 폴더');
+              isSyncing = true;
+              localStorage.setItem(FOLDERS_KEY, JSON.stringify(data.folders));
+              isSyncing = false;
+              // 폴더 목록이 변경되면 UI 업데이트
+              renderFolders();
             }
             
             if (data.notes && Array.isArray(data.notes)) {
@@ -860,6 +884,36 @@
     /** @param {Folder[]} folders */
     function saveFolders(folders) {
       localStorage.setItem(FOLDERS_KEY, JSON.stringify(folders));
+      
+      // Firebase 동기화 (비동기지만 완료를 기다리지 않음 - 성능을 위해)
+      if (isFirebaseEnabled() && !isSyncing) {
+        syncFoldersToFirebase(folders).catch(err => {
+          console.error('폴더 Firebase 저장 실패 (재시도 안 함):', err);
+        });
+      }
+    }
+    
+    // 폴더만 Firebase에 저장
+    async function syncFoldersToFirebase(folders) {
+      if (!isFirebaseEnabled()) {
+        return;
+      }
+      
+      const userId = getUserId();
+      if (!userId) {
+        return;
+      }
+      
+      try {
+        const dataDoc = window.firebaseDoc(window.firebaseDb, 'users', userId);
+        await window.firebaseSetDoc(dataDoc, {
+          folders: folders,
+          lastUpdated: new Date().toISOString()
+        }, { merge: true });
+        console.log('폴더 Firebase 저장 성공:', folders.length, '개 폴더');
+      } catch (error) {
+        console.error('폴더 Firebase 동기화 실패:', error);
+      }
     }
 
     // 날짜 문자열 생성 (YYYY-MM-DD)

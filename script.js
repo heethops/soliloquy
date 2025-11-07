@@ -2,7 +2,9 @@
   const STORAGE_KEY = 'timestamped_notes_v1';
   const FOLDERS_KEY = 'folders_v1';
   const PROFILE_BIO_KEY = 'profile_bio_v1';
-  const PROFILE_IMAGE_KEY = 'profile_image_v1';
+    const PROFILE_IMAGE_KEY = 'profile_image_v1';
+    const GITHUB_TOKEN_KEY = 'github_token';
+    const GITHUB_REPO_KEY = 'github_repo';
   const PROFILE_NAME_KEY = 'profile_name_v1';
   const BACKUP_KEY = 'backup_data_v1';
   const BOOKMARK_FOLDER_ID = '__bookmark_folder__';
@@ -1030,6 +1032,88 @@
       }
     }
 
+    // GitHub Pages favicon 업데이트
+    async function updateGitHubFavicon(imageData) {
+      try {
+        const token = localStorage.getItem(GITHUB_TOKEN_KEY);
+        const repo = localStorage.getItem(GITHUB_REPO_KEY);
+        
+        if (!token || !repo) {
+          return; // GitHub 설정이 없으면 스킵
+        }
+        
+        // 32x32 크기의 favicon 생성
+        const img = new Image();
+        img.onload = function() {
+          const canvas = document.createElement('canvas');
+          canvas.width = 32;
+          canvas.height = 32;
+          const ctx = canvas.getContext('2d');
+          ctx.imageSmoothingEnabled = true;
+          ctx.imageSmoothingQuality = 'high';
+          ctx.drawImage(img, 0, 0, 32, 32);
+          
+          canvas.toBlob(async function(blob) {
+            if (!blob) return;
+            
+            // Base64로 변환
+            const reader = new FileReader();
+            reader.onload = async function() {
+              const base64Data = reader.result.split(',')[1];
+              
+              try {
+                // GitHub API로 파일 업데이트
+                // 먼저 기존 파일 정보 가져오기
+                const getFileUrl = `https://api.github.com/repos/${repo}/contents/favicon.ico`;
+                const getResponse = await fetch(getFileUrl, {
+                  headers: {
+                    'Authorization': `token ${token}`,
+                    'Accept': 'application/vnd.github.v3+json'
+                  }
+                });
+                
+                let sha = null;
+                if (getResponse.ok) {
+                  const fileData = await getResponse.json();
+                  sha = fileData.sha;
+                }
+                
+                // 파일 업데이트 또는 생성
+                const putUrl = `https://api.github.com/repos/${repo}/contents/favicon.ico`;
+                const putResponse = await fetch(putUrl, {
+                  method: 'PUT',
+                  headers: {
+                    'Authorization': `token ${token}`,
+                    'Accept': 'application/vnd.github.v3+json',
+                    'Content-Type': 'application/json'
+                  },
+                  body: JSON.stringify({
+                    message: 'Update favicon from profile image',
+                    content: base64Data,
+                    sha: sha
+                  })
+                });
+                
+                if (putResponse.ok) {
+                  console.log('✅ GitHub Pages favicon 업데이트 완료');
+                } else {
+                  const error = await putResponse.json();
+                  console.error('GitHub favicon 업데이트 실패:', error);
+                  // 조용히 실패 처리 (토스트 없이)
+                }
+              } catch (error) {
+                console.error('GitHub favicon 업데이트 오류:', error);
+              }
+            };
+            reader.readAsDataURL(blob);
+          }, 'image/png');
+        };
+        img.src = imageData;
+      } catch (error) {
+        console.error('GitHub favicon 업데이트 실패:', error);
+      }
+    }
+
     // 프로필 사진 저장
     function saveProfileImage(imageData) {
       try {
@@ -1044,6 +1128,10 @@
         setTimeout(() => {
           exportProfileImageToICO(true);
         }, 500); // favicon 업데이트 후 약간의 딜레이를 두고 ICO 저장
+        // GitHub Pages favicon 업데이트
+        setTimeout(() => {
+          updateGitHubFavicon(imageData);
+        }, 1000);
       } catch {
         // 저장 실패 시 무시
       }
@@ -1146,7 +1234,7 @@
                   }
                 };
                 reader.readAsArrayBuffer(blob);
-              } else {
+        } else {
                 // toBlob 실패 시 toDataURL 사용
                 const pngData = canvas.toDataURL('image/png', 1.0);
                 const base64Data = pngData.split(',')[1];

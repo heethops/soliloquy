@@ -298,14 +298,6 @@
           });
           console.log('새 ID로 데이터 복사 완료');
           
-          // 기존 ID 문서에 migratedTo 필드 추가 (다른 기기에서 자동 변경을 위해)
-          // 기존 ID 문서는 삭제하지 않고 migratedTo만 추가하여 다른 기기에서 확인 가능하도록 함
-          await window.firebaseSetDoc(oldDoc, {
-            migratedTo: newUserId,
-            migrationTime: new Date().toISOString()
-          }, { merge: true });
-          console.log('기존 ID 문서에 migratedTo 필드 추가 완료');
-          
           // 로컬 스토리지도 업데이트
           if (oldData.notes && Array.isArray(oldData.notes)) {
             localStorage.setItem(STORAGE_KEY, JSON.stringify(oldData.notes));
@@ -324,9 +316,43 @@
             }
           }
           
+          // 기존 ID 문서에 migratedTo 필드 추가 (다른 기기에서 자동 변경을 위해)
+          // 기존 ID 문서는 삭제하지 않고 migratedTo만 추가하여 다른 기기에서 확인 가능하도록 함
+          await window.firebaseSetDoc(oldDoc, {
+            migratedTo: newUserId,
+            migrationTime: new Date().toISOString()
+          }, { merge: true });
+          console.log('기존 ID 문서에 migratedTo 필드 추가 완료');
+          
           return true;
         } else {
-          console.log('기존 ID에 데이터 없음, 마이그레이션 불필요');
+          console.log('기존 ID에 Firebase 데이터 없음, 로컬 데이터 마이그레이션');
+          
+          // 기존 ID 문서에 migratedTo 필드 추가 (다른 기기에서 자동 변경을 위해)
+          await window.firebaseSetDoc(oldDoc, {
+            migratedTo: newUserId,
+            migrationTime: new Date().toISOString()
+          }, { merge: true });
+          console.log('기존 ID 문서에 migratedTo 필드 추가 완료');
+          
+          // 로컬 데이터를 새 ID로 Firebase에 저장
+          const localNotes = loadNotes();
+          const localFolders = loadFolders();
+          if (localNotes.length > 0 || localFolders.length > 0) {
+            console.log('로컬 데이터를 새 ID로 마이그레이션:', localNotes.length, '개 노트,', localFolders.length, '개 폴더');
+            const newDoc = window.firebaseDoc(window.firebaseDb, 'users', newUserId);
+            const newData = {
+              notes: localNotes,
+              folders: localFolders,
+              profileBio: localStorage.getItem(PROFILE_BIO_KEY) || '',
+              profileName: localStorage.getItem(PROFILE_NAME_KEY) || '',
+              profileImage: localStorage.getItem(PROFILE_IMAGE_KEY) || null,
+              lastUpdated: new Date().toISOString()
+            };
+            await window.firebaseSetDoc(newDoc, newData);
+            console.log('로컬 데이터를 새 ID로 저장 완료');
+          }
+          
           return true; // 데이터가 없어도 성공으로 처리
         }
       } catch (error) {
@@ -386,11 +412,22 @@
             console.log('Firebase 문서 확인 결과:', {
               userId: userId,
               exists: docSnap.exists(),
-              hasData: docSnap.exists() && docSnap.data() !== undefined
+              hasData: docSnap.exists() && docSnap.data() !== undefined,
+              data: docSnap.exists() ? docSnap.data() : null
             });
             
-            // 문서가 존재하고 실제 데이터가 있는지 확인
-            if (docSnap.exists() && docSnap.data() !== undefined && Object.keys(docSnap.data()).length > 0) {
+            // 문서가 존재하고 실제 데이터(notes, folders 등)가 있는지 확인
+            // migratedTo 필드만 있는 문서는 마이그레이션 마커이므로 제외
+            const data = docSnap.exists() ? docSnap.data() : null;
+            const hasRealData = data && (
+              (data.notes && Array.isArray(data.notes) && data.notes.length > 0) ||
+              (data.folders && Array.isArray(data.folders) && data.folders.length > 0) ||
+              data.profileName !== undefined ||
+              data.profileBio !== undefined ||
+              data.profileImage !== undefined
+            );
+            
+            if (hasRealData) {
               // 새 ID가 이미 존재하면 확인 모달 표시
               console.log('기존 계정 발견, 확인 모달 표시:', userId);
               showAccountSwitchModal(userId);

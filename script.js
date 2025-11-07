@@ -129,7 +129,7 @@
 
     // 검색 상태 (초기 렌더 전에 선언/초기화)
     let searchQuery = '';
-    let selectedFolderId = null; // 선택된 폴더 ID
+    let selectedFolderIds = new Set(); // 선택된 폴더 ID들 (중복 선택 가능)
     let folderMode = false; // 폴더 모드 상태
     let editingFolderId = null; // 편집 중인 폴더 ID
     let dateMode = false; // 날짜 모드 상태
@@ -1445,13 +1445,13 @@
       noteContextMenu.appendChild(folderBtn);
       document.body.appendChild(noteContextMenu);
 
-      // 메뉴 외부 클릭 시 닫기 (모바일에서는 touchend로 바로 닫히지 않도록)
+      // 메뉴 외부 클릭 시 닫기 (모바일에서는 메뉴를 클릭하지 않으면 계속 표시)
       setTimeout(() => {
         let menuJustShown = true;
         // 메뉴가 표시된 직후 일정 시간 동안은 touchend로 닫지 않음
         setTimeout(() => {
           menuJustShown = false;
-        }, 300);
+        }, 500);
         
         const closeMenu = function(e) {
           // 모바일에서 메뉴가 방금 표시된 경우 touchend로 닫지 않음
@@ -1459,15 +1459,23 @@
             return;
           }
           
+          // 모바일에서는 메뉴나 서브메뉴를 클릭한 경우에만 닫지 않음 (외부 클릭 시에만 닫기)
           if (noteContextMenu && !noteContextMenu.contains(e.target) && 
               (!noteContextMenuSubmenu || !noteContextMenuSubmenu.contains(e.target))) {
+            // 모바일에서는 click 이벤트만 처리 (touchend는 무시)
+            if (window.innerWidth <= 768 && e.type === 'touchend') {
+              return;
+            }
             hideNoteContextMenu();
             document.removeEventListener('click', closeMenu);
             document.removeEventListener('touchend', closeMenu);
           }
         };
+        // 모바일에서는 click 이벤트만 사용 (touchend는 사용하지 않음)
         document.addEventListener('click', closeMenu);
-        document.addEventListener('touchend', closeMenu);
+        if (window.innerWidth > 768) {
+          document.addEventListener('touchend', closeMenu);
+        }
       }, 0);
     }
 
@@ -1947,12 +1955,16 @@
         }, 500);
       });
 
-      li.addEventListener('touchend', function() {
+      li.addEventListener('touchend', function(e) {
         if (touchTimer) {
           clearTimeout(touchTimer);
           touchTimer = null;
         }
-      });
+        // 메뉴가 표시된 경우 touchend 이벤트 전파 중지 (메뉴가 바로 닫히지 않도록)
+        if (noteContextMenu && noteContextMenu.parentNode) {
+          e.stopPropagation();
+        }
+      }, { passive: false });
 
       li.addEventListener('touchmove', function(e) {
         const touch = e.touches[0];
@@ -1987,15 +1999,19 @@
       }
       
       // 폴더 필터 적용 - 타래 구조 유지를 위해 부모/자식 중 하나라도 폴더에 있으면 전체 포함
-      if (selectedFolderId) {
-        if (selectedFolderId === PHOTO_FOLDER_ID) {
-          // 사진 폴더: 사진이 있는 글만 표시
+      if (selectedFolderIds.size > 0) {
+        // 사진 폴더가 선택되었는지 확인
+        const hasPhotoFolder = selectedFolderIds.has(PHOTO_FOLDER_ID);
+        const otherFolders = Array.from(selectedFolderIds).filter(id => id !== PHOTO_FOLDER_ID);
+        
+        if (hasPhotoFolder && otherFolders.length === 0) {
+          // 사진 폴더만 선택: 사진이 있는 글만 표시
           filtered = filtered.filter(n => {
             const hasImages = (n.images && n.images.length > 0) || n.imageData;
             return hasImages;
           });
         } else {
-          // 일반 폴더: 타래 구조를 유지하면서 필터링
+          // 일반 폴더 선택 (사진 폴더 포함 가능): 타래 구조를 유지하면서 필터링
           // 먼저 타래 구조 정리 (필터 전)
           const allParentNotes = filtered.filter(n => !n.parentId);
           const allChildNotesMap = new Map();
@@ -2008,18 +2024,36 @@
             }
           });
           
-          // 폴더에 속한 글을 찾고, 타래 전체 포함
+          // 선택된 폴더 중 하나라도 속한 글을 찾고, 타래 전체 포함
           const matchingNotes = new Set();
           filtered.forEach(n => {
-            if (n.folderIds && n.folderIds.includes(selectedFolderId)) {
-              matchingNotes.add(n.id);
-              // 부모 글도 포함
-              if (n.parentId) {
-                matchingNotes.add(n.parentId);
+            // 사진 폴더가 선택되었고 사진이 있으면 포함
+            if (hasPhotoFolder) {
+              const hasImages = (n.images && n.images.length > 0) || n.imageData;
+              if (hasImages) {
+                matchingNotes.add(n.id);
+                // 부모 글도 포함
+                if (n.parentId) {
+                  matchingNotes.add(n.parentId);
+                }
+                // 자식 글들도 포함
+                const children = allChildNotesMap.get(n.id) || [];
+                children.forEach(child => matchingNotes.add(child.id));
               }
-              // 자식 글들도 포함
-              const children = allChildNotesMap.get(n.id) || [];
-              children.forEach(child => matchingNotes.add(child.id));
+            }
+            // 다른 폴더들 확인
+            if (n.folderIds && otherFolders.length > 0) {
+              const hasMatchingFolder = otherFolders.some(folderId => n.folderIds.includes(folderId));
+              if (hasMatchingFolder) {
+                matchingNotes.add(n.id);
+                // 부모 글도 포함
+                if (n.parentId) {
+                  matchingNotes.add(n.parentId);
+                }
+                // 자식 글들도 포함
+                const children = allChildNotesMap.get(n.id) || [];
+                children.forEach(child => matchingNotes.add(child.id));
+              }
             }
           });
           filtered = filtered.filter(n => matchingNotes.has(n.id));
@@ -2146,7 +2180,7 @@
       return Math.random().toString(36).slice(2) + Date.now().toString(36);
     }
 
-    function onSubmit() {
+    async function onSubmit() {
       const value = (input.value || '').trim();
       // 텍스트 또는 이미지가 하나라도 있을 때 전송
       if (!value && pendingImages.length === 0) {
@@ -2164,7 +2198,22 @@
       }
       const notes = loadNotes();
       notes.push(note);
-      saveNotes(notes);
+      
+      // 로컬 저장 먼저
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(notes));
+      updateTotalNotesCount();
+      
+      // Firebase 동기화 (모바일에서도 확실히 저장되도록 await)
+      if (isFirebaseEnabled() && !isSyncing) {
+        try {
+          await syncToFirebase(notes);
+          console.log('✅ 메모가 Firebase에 저장되었습니다.');
+        } catch (err) {
+          console.error('❌ Firebase 저장 실패:', err);
+          // 저장 실패해도 로컬에는 저장되었으므로 계속 진행
+        }
+      }
+      
       renderList(notes);
       if (calendarEl) renderCalendar();
       // 입력/미리보기 초기화
@@ -2552,9 +2601,8 @@
     function updateFilterInfo() {
       if (!filterInfoEl || !clearFilterBtn) return;
       const folders = loadFolders();
-      const selectedFolder = folders.find(f => f.id === selectedFolderId);
       
-      if (selectedDates.length > 0 || selectedFolderId) {
+      if (selectedDates.length > 0 || selectedFolderIds.size > 0) {
         let messages = [];
         if (selectedDates.length > 0) {
           if (selectedDates.length === 1) {
@@ -2564,8 +2612,16 @@
             messages.push(selectedDates.length + '개 날짜 메모만 표시 중');
           }
         }
-        if (selectedFolderId && selectedFolder) {
-          messages.push('"' + selectedFolder.name + '" 폴더만 표시 중');
+        if (selectedFolderIds.size > 0) {
+          const selectedFolderNames = Array.from(selectedFolderIds)
+            .map(id => folders.find(f => f.id === id))
+            .filter(f => f)
+            .map(f => f.name);
+          if (selectedFolderNames.length === 1) {
+            messages.push('"' + selectedFolderNames[0] + '" 폴더만 표시 중');
+          } else {
+            messages.push(selectedFolderNames.length + '개 폴더 표시 중');
+          }
         }
         filterInfoEl.textContent = messages.join(', ');
         filterInfoEl.classList.add('active');
@@ -2719,7 +2775,7 @@
       clearFilterBtn.addEventListener('click', function () {
         selectedDates = [];
         lastSelectedDate = null;
-        selectedFolderId = null;
+        selectedFolderIds.clear();
         renderCalendar();
         renderFolders();
         renderList(loadNotes());
@@ -2739,7 +2795,7 @@
         if (folder.id === BOOKMARK_FOLDER_ID) {
           folderItem.classList.add('bookmark');
         }
-        if (folder.id === selectedFolderId) {
+        if (selectedFolderIds.has(folder.id)) {
           folderItem.classList.add('selected');
         }
         if (folder.id === editingFolderId) {
@@ -2763,9 +2819,7 @@
                 if (f && f.id !== BOOKMARK_FOLDER_ID && f.id !== PHOTO_FOLDER_ID) {
                   const filtered = folders.filter(x => x.id !== folder.id);
                   saveFolders(filtered);
-                  if (selectedFolderId === folder.id) {
-                    selectedFolderId = null;
-                  }
+                  selectedFolderIds.delete(folder.id);
                 } else if (f && (f.id === BOOKMARK_FOLDER_ID || f.id === PHOTO_FOLDER_ID)) {
                   // 북마크 폴더와 사진 폴더는 이름을 유지
                   if (f.id === BOOKMARK_FOLDER_ID) {
@@ -2834,9 +2888,7 @@
                   if (folder.name && folder.name.trim() !== '') {
                     const filtered = folders.filter(x => x.id !== folder.id);
                     saveFolders(filtered);
-                    if (selectedFolderId === folder.id) {
-                      selectedFolderId = null;
-                    }
+                    selectedFolderIds.delete(folder.id);
                 editingFolderId = null;
                 renderFolders();
                 // 폴더 삭제 시에만 메모 목록 다시 렌더링
@@ -2904,8 +2956,12 @@
               renderList(notes);
               updateBulkState();
             } else {
-              // 폴더 선택 (필터링)
-              selectedFolderId = selectedFolderId === folder.id ? null : folder.id;
+              // 폴더 선택 (필터링) - 중복 선택 가능
+              if (selectedFolderIds.has(folder.id)) {
+                selectedFolderIds.delete(folder.id);
+              } else {
+                selectedFolderIds.add(folder.id);
+              }
               renderFolders();
               renderList(loadNotes());
               updateFilterInfo();
@@ -2976,12 +3032,14 @@
 
     if (folderEditBtn) {
       folderEditBtn.addEventListener('click', function () {
-        if (selectedFolderId) {
-          editingFolderId = selectedFolderId;
+        if (selectedFolderIds.size > 0) {
+          // 첫 번째 선택된 폴더만 편집
+          const firstSelectedId = Array.from(selectedFolderIds)[0];
+          editingFolderId = firstSelectedId;
           renderFolders();
           // 편집 모드로 전환 후 포커스
           requestAnimationFrame(() => {
-            const folderItem = folderList?.querySelector(`[data-folder-id="${selectedFolderId}"]`);
+            const folderItem = folderList?.querySelector(`[data-folder-id="${firstSelectedId}"]`);
             if (folderItem) {
               const input = folderItem.querySelector('input');
               if (input) {
@@ -2996,21 +3054,34 @@
 
     if (folderDeleteBtn) {
       folderDeleteBtn.addEventListener('click', function () {
-        if (selectedFolderId) {
-          // 북마크 폴더와 사진 폴더는 삭제 불가
-          if (selectedFolderId === BOOKMARK_FOLDER_ID || selectedFolderId === PHOTO_FOLDER_ID) {
-            alert('이 폴더는 삭제할 수 없습니다.');
+        if (selectedFolderIds.size > 0) {
+          const folders = loadFolders();
+          const deletableIds = Array.from(selectedFolderIds).filter(id => 
+            id !== BOOKMARK_FOLDER_ID && id !== PHOTO_FOLDER_ID
+          );
+          
+          if (deletableIds.length === 0) {
+            alert('선택한 폴더는 삭제할 수 없습니다.');
             return;
           }
-          if (confirm('이 폴더를 삭제하시겠습니까? 폴더 안의 글은 삭제되지 않습니다.')) {
-            const folders = loadFolders();
-            const filtered = folders.filter(f => f.id !== selectedFolderId);
+          
+          const folderNames = deletableIds.map(id => {
+            const folder = folders.find(f => f.id === id);
+            return folder ? folder.name : id;
+          });
+          
+          const message = deletableIds.length === 1 
+            ? `"${folderNames[0]}" 폴더를 삭제하시겠습니까? 폴더 안의 글은 삭제되지 않습니다.`
+            : `${deletableIds.length}개 폴더를 삭제하시겠습니까? 폴더 안의 글은 삭제되지 않습니다.`;
+          
+          if (confirm(message)) {
+            const filtered = folders.filter(f => !deletableIds.includes(f.id));
             saveFolders(filtered);
-            // 해당 폴더의 노트들의 folderIds에서 제거
+            // 해당 폴더들의 노트들의 folderIds에서 제거
             const notes = loadNotes();
             notes.forEach(note => {
-              if (note.folderIds && note.folderIds.includes(selectedFolderId)) {
-                note.folderIds = note.folderIds.filter(id => id !== selectedFolderId);
+              if (note.folderIds) {
+                note.folderIds = note.folderIds.filter(id => !deletableIds.includes(id));
                 // 빈 배열이 되면 속성 제거
                 if (note.folderIds.length === 0) {
                   delete note.folderIds;
@@ -3018,9 +3089,10 @@
               }
             });
             saveNotes(notes);
-            selectedFolderId = null;
+            deletableIds.forEach(id => selectedFolderIds.delete(id));
             renderFolders();
             renderList(notes);
+            updateFilterInfo();
           }
         }
       });
@@ -3224,19 +3296,51 @@
       
       // 초기 동기화 (읽기 1회) - 새로고침 시에만 Firebase에서 최신 데이터 가져오기
       syncFromFirebase().then(cloudNotes => {
-        // Firebase에서 데이터를 가져왔으면 항상 업데이트 (어느 경로로 들어가든 같은 내용)
+        const currentLocalNotes = loadNotes();
+        
+        // Firebase에서 데이터를 가져왔을 때
         if (cloudNotes && cloudNotes.length > 0) {
-          const currentLocalNotes = loadNotes();
-          // 데이터가 다르면 Firebase 데이터로 업데이트
-          if (JSON.stringify(cloudNotes) !== JSON.stringify(currentLocalNotes)) {
-            renderList(cloudNotes);
-            console.log('Firebase에서 최신 데이터를 가져와서 업데이트했습니다.');
+          // 로컬 데이터와 Firebase 데이터 병합 (최신 것 우선)
+          const localNotesMap = new Map(currentLocalNotes.map(n => [n.id, n]));
+          const cloudNotesMap = new Map(cloudNotes.map(n => [n.id, n]));
+          
+          // 모든 노트 ID 수집
+          const allNoteIds = new Set([...localNotesMap.keys(), ...cloudNotesMap.keys()]);
+          const mergedNotes = [];
+          
+          for (const id of allNoteIds) {
+            const localNote = localNotesMap.get(id);
+            const cloudNote = cloudNotesMap.get(id);
+            
+            if (localNote && cloudNote) {
+              // 둘 다 있으면 더 최신 것 사용
+              const localTime = new Date(localNote.createdAt).getTime();
+              const cloudTime = new Date(cloudNote.createdAt).getTime();
+              mergedNotes.push(localTime >= cloudTime ? localNote : cloudNote);
+            } else if (localNote) {
+              mergedNotes.push(localNote);
+            } else if (cloudNote) {
+              mergedNotes.push(cloudNote);
+            }
+          }
+          
+          // createdAt 기준으로 정렬
+          mergedNotes.sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
+          
+          // 병합된 데이터가 로컬과 다르면 업데이트
+          if (JSON.stringify(mergedNotes) !== JSON.stringify(currentLocalNotes)) {
+            localStorage.setItem(STORAGE_KEY, JSON.stringify(mergedNotes));
+            renderList(mergedNotes);
+            // 병합된 데이터를 Firebase에 저장
+            syncToFirebase(mergedNotes).catch(err => {
+              console.error('병합된 데이터를 Firebase에 저장 실패:', err);
+            });
+            console.log('로컬과 Firebase 데이터를 병합했습니다.');
           }
         } else {
           // Firebase에 데이터가 없으면 로컬 데이터를 Firebase에 저장
-          const localNotes = loadNotes();
-          if (localNotes && localNotes.length > 0) {
-            syncToFirebase(localNotes).catch(err => {
+          if (currentLocalNotes && currentLocalNotes.length > 0) {
+            syncToFirebase(currentLocalNotes).catch(err => {
               console.error('로컬 데이터를 Firebase에 저장 실패:', err);
             });
           }

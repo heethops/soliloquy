@@ -649,9 +649,8 @@
         }
 
         if (data.notes && Array.isArray(data.notes)) {
-          isSyncing = true;
-          localStorage.setItem(STORAGE_KEY, JSON.stringify(data.notes));
-          isSyncing = false;
+          // 로컬 저장소를 바로 덮어쓰지 않고 데이터만 반환 (병합은 initFirebaseSync에서 처리)
+          // 이렇게 하면 모바일에서 새로 작성한 글이 사라지지 않음
           return data.notes;
         }
       } catch (error) {
@@ -1683,6 +1682,87 @@
     /** @type {string[]} */
     let pendingImages = [];
     let dragIndex = null;
+    let imageLoadingInProgress = false; // 이미지 로딩 중인지 추적
+
+    // 이미지 압축 및 리사이즈 함수
+    /**
+     * @param {File} file 
+     * @param {number} maxWidth 
+     * @param {number} maxHeight 
+     * @param {number} quality 
+     * @returns {Promise<string>} Base64 이미지 데이터
+     */
+    async function compressImage(file, maxWidth = 1920, maxHeight = 1920, quality = 0.85) {
+      return new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = function(e) {
+          const img = new Image();
+          img.onload = function() {
+            // 원본 크기
+            let width = img.width;
+            let height = img.height;
+
+            // 리사이즈 필요 여부 확인
+            if (width > maxWidth || height > maxHeight) {
+              // 비율 유지하면서 리사이즈
+              const ratio = Math.min(maxWidth / width, maxHeight / height);
+              width = Math.round(width * ratio);
+              height = Math.round(height * ratio);
+            }
+
+            // Canvas 생성
+            const canvas = document.createElement('canvas');
+            canvas.width = width;
+            canvas.height = height;
+            const ctx = canvas.getContext('2d');
+
+            // 이미지 그리기
+            ctx.drawImage(img, 0, 0, width, height);
+
+            // JPEG로 변환 (압축)
+            let compressedDataUrl = canvas.toDataURL('image/jpeg', quality);
+            
+            // Base64 인코딩 후 크기 확인 (약 800KB 이하로 유지)
+            // Base64는 원본보다 약 33% 크므로, 원본이 600KB 정도면 Base64는 약 800KB
+            let attemptQuality = quality;
+            const maxSize = 600 * 1024; // 600KB
+            
+            // 크기가 너무 크면 품질을 낮춰서 재압축
+            while (attemptQuality > 0.3 && compressedDataUrl.length > maxSize * 1.33) {
+              attemptQuality -= 0.1;
+              compressedDataUrl = canvas.toDataURL('image/jpeg', attemptQuality);
+              console.log(`이미지 압축 재시도: 품질 ${Math.round(attemptQuality * 100)}%, 크기 ${Math.round(compressedDataUrl.length / 1024)}KB`);
+            }
+
+            // 너무 큰 경우 추가로 리사이즈
+            if (compressedDataUrl.length > maxSize * 1.33) {
+              const newRatio = Math.sqrt((maxSize * 1.33) / compressedDataUrl.length);
+              const newWidth = Math.round(width * newRatio);
+              const newHeight = Math.round(height * newRatio);
+              
+              canvas.width = newWidth;
+              canvas.height = newHeight;
+              ctx.drawImage(img, 0, 0, newWidth, newHeight);
+              compressedDataUrl = canvas.toDataURL('image/jpeg', 0.8);
+            }
+
+            const originalSizeKB = Math.round(file.size / 1024);
+            const compressedSizeKB = Math.round(compressedDataUrl.length / 1024);
+            console.log(`이미지 압축 완료: ${originalSizeKB}KB → ${compressedSizeKB}KB (${Math.round((1 - compressedSizeKB / originalSizeKB) * 100)}% 감소)`);
+            
+            resolve(compressedDataUrl);
+          };
+          img.onerror = function() {
+            reject(new Error('이미지 로드 실패'));
+          };
+          img.src = e.target.result;
+        };
+        reader.onerror = function() {
+          reject(new Error('파일 읽기 실패'));
+        };
+        reader.readAsDataURL(file);
+      });
+    }
 
     // 업로드 미리보기 영역에서 기본 드래그오버 허용
     if (uploadPreview) {
@@ -2182,15 +2262,38 @@
 
     async function onSubmit() {
       const value = (input.value || '').trim();
+      
+      // 이미지가 로딩 중이면 완료될 때까지 대기 (모바일에서 이미지와 글을 같이 올릴 때 저장 안 되는 문제 해결)
+      if (imageLoadingInProgress) {
+        console.log('이미지 로딩 중... 대기합니다.');
+        // 이미지 로딩이 완료될 때까지 최대 5초 대기
+        let waitCount = 0;
+        while (imageLoadingInProgress && waitCount < 50) {
+          await new Promise(resolve => setTimeout(resolve, 100));
+          waitCount++;
+        }
+        if (imageLoadingInProgress) {
+          console.warn('이미지 로딩 시간 초과, 진행합니다.');
+          imageLoadingInProgress = false;
+        }
+      }
+      
       // 텍스트 또는 이미지가 하나라도 있을 때 전송
       if (!value && pendingImages.length === 0) {
         input.focus();
         return;
       }
+      
+      // pendingImages가 확실히 준비되었는지 확인 (마지막 안전장치)
+      const imagesToSave = pendingImages.length > 0 ? [...pendingImages] : [];
+      
       const nowIso = new Date().toISOString();
       /** @type {Note} */
       const note = { id: generateId(), text: value, createdAt: nowIso };
-      if (pendingImages.length > 0) note.images = [...pendingImages];
+      if (imagesToSave.length > 0) {
+        note.images = imagesToSave;
+        console.log('이미지 포함 메모 저장:', imagesToSave.length, '개 이미지');
+      }
       // 타래 모드일 때 parentId 설정
       if (threadParentId) {
         note.parentId = threadParentId;
@@ -2199,15 +2302,16 @@
       const notes = loadNotes();
       notes.push(note);
       
-      // 로컬 저장 먼저
+      // 로컬 저장 먼저 (확실히 저장되도록)
       localStorage.setItem(STORAGE_KEY, JSON.stringify(notes));
       updateTotalNotesCount();
+      console.log('로컬 저장 완료:', { text: value.substring(0, 50), images: imagesToSave.length });
       
       // Firebase 동기화 (모바일에서도 확실히 저장되도록 await)
       if (isFirebaseEnabled() && !isSyncing) {
         try {
           await syncToFirebase(notes);
-          console.log('✅ 메모가 Firebase에 저장되었습니다.');
+          console.log('✅ 메모가 Firebase에 저장되었습니다. (이미지 포함:', imagesToSave.length, '개)');
         } catch (err) {
           console.error('❌ Firebase 저장 실패:', err);
           // 저장 실패해도 로컬에는 저장되었으므로 계속 진행
@@ -2346,36 +2450,54 @@
         }
       });
       
-      fileInput.addEventListener('change', function () {
+      fileInput.addEventListener('change', async function () {
         const files = fileInput.files;
         if (!files || files.length === 0) return;
         
         console.log('파일 선택됨:', files.length, '개 파일');
         
-        const readPromises = [];
-        for (const file of Array.from(files)) {
-          readPromises.push(new Promise(resolve => {
-            const reader = new FileReader();
-            reader.onload = function () {
-              resolve(String(reader.result || ''));
-            };
-            reader.onerror = function(error) {
-              console.error('파일 읽기 오류:', error);
-              resolve(null);
-            };
-            reader.readAsDataURL(file);
-          }));
-        }
-        Promise.all(readPromises).then(results => {
-          const validResults = results.filter(r => r !== null);
+        // 이미지 로딩 시작 표시
+        imageLoadingInProgress = true;
+        
+        try {
+          const compressPromises = [];
+          for (const file of Array.from(files)) {
+            // 이미지 파일만 처리
+            if (file.type.startsWith('image/')) {
+              compressPromises.push(
+                compressImage(file)
+                  .then(compressed => compressed)
+                  .catch(error => {
+                    console.error('이미지 압축 실패:', error, file.name);
+                    // 압축 실패 시 원본 사용하지 않고 null 반환 (안전)
+                    return null;
+                  })
+              );
+            } else {
+              console.warn('이미지 파일이 아닙니다:', file.name, file.type);
+              compressPromises.push(Promise.resolve(null));
+            }
+          }
+          
+          const results = await Promise.all(compressPromises);
+          const validResults = results.filter(r => r !== null && r !== undefined);
+          
           if (validResults.length > 0) {
             pendingImages.push(...validResults);
             renderUploadPreview();
             console.log('이미지 미리보기 추가:', validResults.length, '개');
+          } else {
+            showToast('이미지를 처리할 수 없습니다.');
           }
+        } catch (error) {
+          console.error('이미지 처리 중 오류:', error);
+          showToast('이미지 처리 중 오류가 발생했습니다.');
+        } finally {
+          // 이미지 로딩 완료 표시
+          imageLoadingInProgress = false;
           // 선택 상태 초기화
           fileInput.value = '';
-        });
+        }
       });
     }
 
@@ -3164,20 +3286,22 @@
 
       // 파일 선택 시 처리
       if (profileImageInput) {
-        profileImageInput.addEventListener('change', function(e) {
+        profileImageInput.addEventListener('change', async function(e) {
           const file = e.target.files?.[0];
           if (file && file.type.startsWith('image/')) {
-            const reader = new FileReader();
-            reader.onload = function(event) {
-              const imageData = event.target?.result;
-              if (imageData && profileImg && profileImagePlaceholder) {
-                profileImg.src = imageData;
+            try {
+              // 프로필 이미지는 작은 크기로 리사이즈 (500x500)
+              const compressedImage = await compressImage(file, 500, 500, 0.9);
+              if (compressedImage && profileImg && profileImagePlaceholder) {
+                profileImg.src = compressedImage;
                 profileImg.style.display = 'block';
                 profileImagePlaceholder.style.display = 'none';
-                saveProfileImage(imageData);
+                saveProfileImage(compressedImage);
               }
-            };
-            reader.readAsDataURL(file);
+            } catch (error) {
+              console.error('프로필 이미지 압축 실패:', error);
+              showToast('이미지를 처리할 수 없습니다.');
+            }
           }
         });
       }
@@ -3298,51 +3422,63 @@
       syncFromFirebase().then(cloudNotes => {
         const currentLocalNotes = loadNotes();
         
-        // Firebase에서 데이터를 가져왔을 때
-        if (cloudNotes && cloudNotes.length > 0) {
-          // 로컬 데이터와 Firebase 데이터 병합 (최신 것 우선)
-          const localNotesMap = new Map(currentLocalNotes.map(n => [n.id, n]));
-          const cloudNotesMap = new Map(cloudNotes.map(n => [n.id, n]));
-          
-          // 모든 노트 ID 수집
-          const allNoteIds = new Set([...localNotesMap.keys(), ...cloudNotesMap.keys()]);
-          const mergedNotes = [];
-          
-          for (const id of allNoteIds) {
-            const localNote = localNotesMap.get(id);
-            const cloudNote = cloudNotesMap.get(id);
+        // 로컬 데이터를 절대적으로 우선 보존 (모바일에서 새로 작성한 글이 사라지지 않도록)
+        if (currentLocalNotes && currentLocalNotes.length > 0) {
+          // 로컬 데이터가 있으면 항상 로컬 데이터를 우선 사용
+          // Firebase에서 데이터를 가져왔을 때
+          if (cloudNotes && cloudNotes.length > 0) {
+            // 로컬 데이터와 Firebase 데이터 병합 (로컬 절대 우선)
+            const localNotesMap = new Map(currentLocalNotes.map(n => [n.id, n]));
+            const cloudNotesMap = new Map(cloudNotes.map(n => [n.id, n]));
             
-            if (localNote && cloudNote) {
-              // 둘 다 있으면 더 최신 것 사용
-              const localTime = new Date(localNote.createdAt).getTime();
-              const cloudTime = new Date(cloudNote.createdAt).getTime();
-              mergedNotes.push(localTime >= cloudTime ? localNote : cloudNote);
-            } else if (localNote) {
-              mergedNotes.push(localNote);
-            } else if (cloudNote) {
-              mergedNotes.push(cloudNote);
+            // 모든 노트 ID 수집
+            const allNoteIds = new Set([...localNotesMap.keys(), ...cloudNotesMap.keys()]);
+            const mergedNotes = [];
+            
+            for (const id of allNoteIds) {
+              const localNote = localNotesMap.get(id);
+              const cloudNote = cloudNotesMap.get(id);
+              
+              if (localNote && cloudNote) {
+                // 둘 다 있으면 항상 로컬 사용 (로컬 절대 우선 정책)
+                mergedNotes.push(localNote);
+              } else if (localNote) {
+                // 로컬에만 있으면 로컬 사용
+                mergedNotes.push(localNote);
+              } else if (cloudNote) {
+                // Firebase에만 있으면 Firebase 사용 (다른 기기에서 작성한 글)
+                mergedNotes.push(cloudNote);
+              }
             }
-          }
-          
-          // createdAt 기준으로 정렬
-          mergedNotes.sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
-          
-          // 병합된 데이터가 로컬과 다르면 업데이트
-          if (JSON.stringify(mergedNotes) !== JSON.stringify(currentLocalNotes)) {
-            localStorage.setItem(STORAGE_KEY, JSON.stringify(mergedNotes));
-            renderList(mergedNotes);
-            // 병합된 데이터를 Firebase에 저장
-            syncToFirebase(mergedNotes).catch(err => {
-              console.error('병합된 데이터를 Firebase에 저장 실패:', err);
-            });
-            console.log('로컬과 Firebase 데이터를 병합했습니다.');
-          }
-        } else {
-          // Firebase에 데이터가 없으면 로컬 데이터를 Firebase에 저장
-          if (currentLocalNotes && currentLocalNotes.length > 0) {
+            
+            // createdAt 기준으로 정렬
+            mergedNotes.sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
+            
+            // 병합된 데이터가 로컬과 다르면 업데이트
+            if (JSON.stringify(mergedNotes) !== JSON.stringify(currentLocalNotes)) {
+              localStorage.setItem(STORAGE_KEY, JSON.stringify(mergedNotes));
+              renderList(mergedNotes);
+              // 병합된 데이터를 Firebase에 저장
+              syncToFirebase(mergedNotes).catch(err => {
+                console.error('병합된 데이터를 Firebase에 저장 실패:', err);
+              });
+              console.log('로컬과 Firebase 데이터를 병합했습니다. (로컬 우선)');
+            } else {
+              // 데이터가 같으면 로컬 데이터 유지 (이미 표시됨)
+              console.log('로컬과 Firebase 데이터가 동일합니다.');
+            }
+          } else {
+            // Firebase에 데이터가 없으면 로컬 데이터를 Firebase에 저장
             syncToFirebase(currentLocalNotes).catch(err => {
               console.error('로컬 데이터를 Firebase에 저장 실패:', err);
             });
+          }
+        } else {
+          // 로컬 데이터가 없고 Firebase에만 있으면 Firebase 데이터 사용
+          if (cloudNotes && cloudNotes.length > 0) {
+            localStorage.setItem(STORAGE_KEY, JSON.stringify(cloudNotes));
+            renderList(cloudNotes);
+            console.log('Firebase에서 데이터를 가져왔습니다.');
           }
         }
         // 정기 동기화 제거 - 변경 이벤트 발생 시에만 동기화

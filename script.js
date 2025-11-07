@@ -3233,19 +3233,30 @@
         userId: getUserId() // 고정 ID
       });
       
-      // 초기 동기화 (읽기 1회) - 새로고침 시에만
+      // 초기 동기화 (읽기 1회) - 새 창/새로고침 시 Firebase에서 최신 데이터 가져오기
       syncFromFirebase().then(cloudNotes => {
+        // Firebase에서 데이터를 가져왔으면 항상 업데이트 (어느 경로로 들어가든 같은 내용)
         if (cloudNotes && cloudNotes.length > 0) {
           const currentLocalNotes = loadNotes();
+          // 데이터가 다르면 Firebase 데이터로 업데이트
           if (JSON.stringify(cloudNotes) !== JSON.stringify(currentLocalNotes)) {
             renderList(cloudNotes);
+            console.log('Firebase에서 최신 데이터를 가져와서 업데이트했습니다.');
+          }
+        } else {
+          // Firebase에 데이터가 없으면 로컬 데이터를 Firebase에 저장
+          const localNotes = loadNotes();
+          if (localNotes && localNotes.length > 0) {
+            syncToFirebase(localNotes).catch(err => {
+              console.error('로컬 데이터를 Firebase에 저장 실패:', err);
+            });
           }
         }
         // 다른 기기/Firebase 콘솔에서 변경사항 확인 시작 (30초마다)
         startFirebaseSync();
       }).catch((error) => {
         console.error('Firebase 동기화 오류:', error);
-        showToast('동기화 오류: ' + error.message);
+        // 에러가 발생해도 로컬 데이터는 이미 표시되었으므로 계속 사용
       });
     }
     
@@ -3273,6 +3284,17 @@
     });
     
     // 프로필 정보는 syncFromFirebase에서 이미 처리되므로 중복 호출 제거 (성능 최적화)
+    
+    // Firebase 동기화 초기화 (새 창에서도 작동하도록)
+    if (window.firebaseReady) {
+      // Firebase가 이미 준비되었으면 즉시 초기화
+      initFirebaseSync();
+    } else {
+      // Firebase가 아직 준비되지 않았으면 이벤트 대기
+      window.addEventListener('firebase-ready', () => {
+        initFirebaseSync();
+      });
+    }
     
     // 모바일 스타일 적용 함수
     function applyMobileStyles() {

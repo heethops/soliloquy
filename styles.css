@@ -370,15 +370,19 @@ html, body {
   color: #0066cc;
   min-width: 0;
   width: 100%;
+  max-width: 100%;
   box-sizing: border-box;
+  overflow: hidden;
 }
 
 .thread-indicator-text {
   flex: 1;
   min-width: 0;
+  max-width: 100%;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  word-break: break-all;
 }
 
 .thread-cancel-btn {
@@ -1254,11 +1258,17 @@ label.btn-icon {
   /* 모바일에서 답글 표시기 텍스트가 화면 밖으로 나가지 않도록 */
   .thread-indicator {
     max-width: 100% !important;
+    width: 100% !important;
     box-sizing: border-box !important;
+    overflow: hidden !important;
   }
   .thread-indicator-text {
     min-width: 0 !important;
     max-width: 100% !important;
+    overflow: hidden !important;
+    text-overflow: ellipsis !important;
+    white-space: nowrap !important;
+    word-break: break-all !important;
   }
   .thread-cancel-btn {
     flex-shrink: 0 !important;

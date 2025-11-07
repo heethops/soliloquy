@@ -766,21 +766,10 @@
       }
     }
 
-    // Firebase 동기화 시작 (다른 기기/Firebase 콘솔에서 변경사항 확인)
+    // Firebase 동기화 시작 (정기 동기화 제거됨 - 변경 이벤트 발생 시에만 동기화)
     function startFirebaseSync() {
-      if (!isFirebaseEnabled()) {
-        return;
-      }
-
-      // 이미 폴링이 실행 중이면 다시 시작하지 않음
-      if (firebaseSyncInterval) {
-        return;
-      }
-
-      // 30초마다 업데이트 확인 (다른 기기/Firebase 콘솔에서 변경사항 감지)
-      firebaseSyncInterval = setInterval(() => {
-        checkFirebaseUpdates();
-      }, 30000); // 30초마다 확인
+      // 정기 동기화 제거됨 - 변경 이벤트 발생 시에만 동기화
+      // 이 함수는 호환성을 위해 유지하지만 실제로는 아무것도 하지 않음
     }
 
     // Firebase 동기화 중지
@@ -3233,7 +3222,7 @@
         userId: getUserId() // 고정 ID
       });
       
-      // 초기 동기화 (읽기 1회) - 새 창/새로고침 시 Firebase에서 최신 데이터 가져오기
+      // 초기 동기화 (읽기 1회) - 새로고침 시에만 Firebase에서 최신 데이터 가져오기
       syncFromFirebase().then(cloudNotes => {
         // Firebase에서 데이터를 가져왔으면 항상 업데이트 (어느 경로로 들어가든 같은 내용)
         if (cloudNotes && cloudNotes.length > 0) {
@@ -3252,8 +3241,7 @@
             });
           }
         }
-        // 다른 기기/Firebase 콘솔에서 변경사항 확인 시작 (30초마다)
-        startFirebaseSync();
+        // 정기 동기화 제거 - 변경 이벤트 발생 시에만 동기화
       }).catch((error) => {
         console.error('Firebase 동기화 오류:', error);
         // 에러가 발생해도 로컬 데이터는 이미 표시되었으므로 계속 사용

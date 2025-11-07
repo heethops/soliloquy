@@ -420,11 +420,10 @@
     }
 
     let isSyncing = false;
-    let syncTimeout = null; // 디바운싱을 위한 타이머 (5초 이상으로 설정하여 quota 절약)
     let lastSyncedData = null; // 마지막으로 동기화한 데이터 (중복 방지)
-    let firebaseSyncInterval = null; // Firebase 수동 동기화 인터벌 (실시간 리스너 대신 사용하여 quota 절약)
+    let firebaseSyncInterval = null; // Firebase 수동 동기화 인터벌 (현재 사용 안 함)
 
-    // Firebase에 데이터 저장 (quota 절약: 디바운싱 10초, 데이터 변경 시에만 저장)
+    // Firebase에 데이터 저장 (즉시 동기화, 데이터 변경 시에만 저장)
     async function syncToFirebase(notes) {
       if (!isFirebaseEnabled()) {
         console.warn('Firebase 동기화가 활성화되지 않았습니다.');
@@ -440,7 +439,20 @@
 
       try {
         // 데이터가 실제로 변경되었는지 확인 (quota 절약)
-        const folders = loadFolders();
+        // loadFolders()는 동기화를 트리거할 수 있으므로 직접 localStorage에서 읽기
+        let folders = [];
+        try {
+          const raw = localStorage.getItem(FOLDERS_KEY);
+          if (raw) {
+            const parsed = JSON.parse(raw);
+            if (Array.isArray(parsed)) {
+              folders = parsed;
+            }
+          }
+        } catch {
+          folders = [];
+        }
+        
         const profileData = {
           notes: notes,
           folders: folders,
@@ -754,25 +766,15 @@
       }
     }
 
-    // Firebase 동기화 시작 (quota 절약: 120초마다 수동 확인)
+    // Firebase 동기화 시작 (주기적 동기화 제거됨 - 변경 이벤트 발생 시에만 동기화)
     function startFirebaseSync() {
-      if (!isFirebaseEnabled()) {
-        return;
-      }
-
-      // 이미 폴링이 실행 중이면 다시 시작하지 않음
-      if (firebaseSyncInterval) {
-        return;
-      }
-
-      // 120초마다 업데이트 확인 (quota 절약)
-      firebaseSyncInterval = setInterval(() => {
-        checkFirebaseUpdates();
-      }, 120000); // 120초 = 2분
+      // 주기적 동기화 제거됨 - 변경 이벤트 발생 시에만 동기화
+      // 이 함수는 호환성을 위해 유지하지만 실제로는 아무것도 하지 않음
     }
 
     // Firebase 동기화 중지
     function stopFirebaseSync() {
+      // 주기적 동기화가 없으므로 중지할 것도 없음
       if (firebaseSyncInterval) {
         clearInterval(firebaseSyncInterval);
         firebaseSyncInterval = null;
@@ -879,19 +881,11 @@
     function saveNotes(notes) {
       localStorage.setItem(STORAGE_KEY, JSON.stringify(notes));
       
-      // Firebase 동기화 디바운싱 (10초마다 최대 1번, quota 절약)
+      // Firebase 즉시 동기화
       if (isFirebaseEnabled() && !isSyncing) {
-        // 기존 타이머 취소
-        if (syncTimeout) {
-          clearTimeout(syncTimeout);
-        }
-        // 10초 후에 동기화 (연속 호출 방지, quota 절약)
-        syncTimeout = setTimeout(() => {
-          syncTimeout = null;
-          syncToFirebase(notes).catch(err => {
-            console.error('Firebase 저장 실패 (재시도 안 함):', err);
-          });
-        }, 10000); // 10초 디바운싱 (쓰기 quota 절약)
+        syncToFirebase(notes).catch(err => {
+          console.error('Firebase 저장 실패 (재시도 안 함):', err);
+        });
       }
       
       updateTotalNotesCount();
@@ -926,7 +920,7 @@
             id: BOOKMARK_FOLDER_ID,
             name: '북마크'
           });
-          saveFolders(folders);
+          saveFolders(folders, true); // skipSync = true (무한 재귀 방지)
         }
         // 사진 폴더가 없으면 생성
         const photoFolder = folders.find(f => f.id === PHOTO_FOLDER_ID);
@@ -935,7 +929,7 @@
             id: PHOTO_FOLDER_ID,
             name: '사진'
           });
-          saveFolders(folders);
+          saveFolders(folders, true); // skipSync = true (무한 재귀 방지)
         }
         // 북마크 폴더를 가장 위로 정렬
         const bookmark = folders.find(f => f.id === BOOKMARK_FOLDER_ID);
@@ -957,7 +951,7 @@
           // 북마크 다음에 삽입
           const bookmarkIndex = folders.findIndex(f => f.id === BOOKMARK_FOLDER_ID);
           folders.splice(bookmarkIndex + 1, 0, photo);
-          saveFolders(folders);
+          saveFolders(folders, true); // skipSync = true (무한 재귀 방지)
         }
         return folders;
       } catch {
@@ -970,30 +964,22 @@
           id: PHOTO_FOLDER_ID,
           name: '사진'
         };
-        saveFolders([bookmarkFolder, photoFolder]);
+        saveFolders([bookmarkFolder, photoFolder], true); // skipSync = true (무한 재귀 방지)
         return [bookmarkFolder, photoFolder];
       }
     }
 
     /** @param {Folder[]} folders */
-    function saveFolders(folders) {
+    function saveFolders(folders, skipSync = false) {
       localStorage.setItem(FOLDERS_KEY, JSON.stringify(folders));
       
-      // Firebase 동기화 디바운싱 (5초마다 최대 1번, quota 절약)
+      // Firebase 즉시 동기화 (skipSync가 true이면 건너뛰기 - 무한 재귀 방지)
       // syncToFirebase가 notes와 folders를 함께 저장하므로 notes를 로드해서 동기화
-      if (isFirebaseEnabled() && !isSyncing) {
-        // 기존 타이머 취소
-        if (syncTimeout) {
-          clearTimeout(syncTimeout);
-        }
-        // 10초 후에 동기화 (연속 호출 방지, quota 절약)
-        syncTimeout = setTimeout(() => {
-          syncTimeout = null;
-          const notes = loadNotes();
-          syncToFirebase(notes).catch(err => {
-            console.error('Firebase 저장 실패 (재시도 안 함):', err);
-          });
-        }, 10000); // 10초 디바운싱 (쓰기 quota 절약)
+      if (!skipSync && isFirebaseEnabled() && !isSyncing) {
+        const notes = loadNotes();
+        syncToFirebase(notes).catch(err => {
+          console.error('Firebase 저장 실패 (재시도 안 함):', err);
+        });
       }
     }
     
@@ -3237,7 +3223,7 @@
         userId: getUserId() // 고정 ID
       });
       
-      // 초기 동기화 (읽기 1회)
+      // 초기 동기화 (읽기 1회) - 새로고침 시에만
       syncFromFirebase().then(cloudNotes => {
         if (cloudNotes && cloudNotes.length > 0) {
           const currentLocalNotes = loadNotes();
@@ -3245,8 +3231,7 @@
             renderList(cloudNotes);
           }
         }
-        // Firebase 동기화 시작 (60초마다 수동 확인)
-        startFirebaseSync();
+        // 주기적 동기화 제거 - 변경 이벤트 발생 시에만 동기화
       }).catch((error) => {
         console.error('Firebase 동기화 오류:', error);
         showToast('동기화 오류: ' + error.message);

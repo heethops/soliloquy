@@ -430,14 +430,15 @@
             if (hasRealData) {
               // 새 ID가 이미 존재하면 확인 모달 표시
               console.log('기존 계정 발견, 확인 모달 표시:', userId);
+              hideUserIdModal(); // ID 변경 모달 먼저 닫기
               showAccountSwitchModal(userId);
             } else {
               // 새 ID가 없으면 데이터 마이그레이션
               console.log('새 ID 없음, 데이터 마이그레이션:', oldUserId, '->', userId);
+              hideUserIdModal(); // 모달 즉시 닫기
               migrateUserId(oldUserId, userId).then((success) => {
                 if (success) {
                   setUserId(userId);
-                  hideUserIdModal();
                   updateProfileUserId();
                   
                   // 프로필 정보 UI 업데이트

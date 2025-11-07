@@ -1142,115 +1142,104 @@
       folderBtn.appendChild(folderText);
       folderBtn.appendChild(folderArrow);
       
-      // 서브메뉴 생성
-      noteContextMenuSubmenu = document.createElement('div');
-      noteContextMenuSubmenu.className = 'note-context-menu-submenu';
-      const folders = loadFolders();
-      folders.forEach(folder => {
-        // 사진 폴더는 제외 (자동으로 추가되므로)
-        if (folder.id === PHOTO_FOLDER_ID) return;
-        
-        const folderItem = document.createElement('button');
-        folderItem.type = 'button';
-        folderItem.className = 'note-context-menu-submenu-item';
-        folderItem.textContent = folder.name || '폴더';
-        folderItem.addEventListener('click', function() {
-          const notes = loadNotes();
-          const currentNote = notes.find(n => n.id === note.id);
-          if (currentNote) {
-            if (!currentNote.folderIds) {
-              currentNote.folderIds = [];
-            }
-            if (!currentNote.folderIds.includes(folder.id)) {
-              currentNote.folderIds.push(folder.id);
-              saveNotes(notes);
-              renderList(notes);
-            }
-          }
-          hideNoteContextMenu();
-        });
-        noteContextMenuSubmenu.appendChild(folderItem);
-      });
-
       // 폴더 추가 버튼 클릭/마우스 오버 시 서브메뉴 표시
       const isMobileDevice = window.innerWidth <= 768;
+      
+      // 서브메뉴 생성 함수
+      function createSubmenu() {
+        // 기존 서브메뉴 제거
+        if (noteContextMenuSubmenu) {
+          noteContextMenuSubmenu.remove();
+        }
+        
+        noteContextMenuSubmenu = document.createElement('div');
+        noteContextMenuSubmenu.className = 'note-context-menu-submenu';
+        const folders = loadFolders();
+        folders.forEach(folder => {
+          // 사진 폴더는 제외 (자동으로 추가되므로)
+          if (folder.id === PHOTO_FOLDER_ID) return;
+          
+          const folderItem = document.createElement('button');
+          folderItem.type = 'button';
+          folderItem.className = 'note-context-menu-submenu-item';
+          folderItem.textContent = folder.name || '폴더';
+          folderItem.addEventListener('click', function() {
+            const notes = loadNotes();
+            const currentNote = notes.find(n => n.id === note.id);
+            if (currentNote) {
+              if (!currentNote.folderIds) {
+                currentNote.folderIds = [];
+              }
+              if (!currentNote.folderIds.includes(folder.id)) {
+                currentNote.folderIds.push(folder.id);
+                saveNotes(notes);
+                renderList(notes);
+              }
+            }
+            hideNoteContextMenu();
+          });
+          noteContextMenuSubmenu.appendChild(folderItem);
+        });
+        
+        // PC 버전을 위한 마우스 이벤트 리스너 추가
+        if (!isMobileDevice) {
+          noteContextMenuSubmenu.addEventListener('mouseenter', function() {
+            noteContextMenuSubmenu.style.display = 'flex';
+          });
+          noteContextMenuSubmenu.addEventListener('mouseleave', function() {
+            noteContextMenuSubmenu.style.display = 'none';
+          });
+        }
+        
+        return noteContextMenuSubmenu;
+      }
       
       if (isMobileDevice) {
         // 모바일: 클릭으로 서브메뉴 토글
         let submenuVisible = false;
         folderBtn.addEventListener('click', function(e) {
           e.stopPropagation();
-          if (noteContextMenuSubmenu) {
-            if (submenuVisible) {
+          if (submenuVisible) {
+            if (noteContextMenuSubmenu) {
               noteContextMenuSubmenu.style.display = 'none';
-              submenuVisible = false;
-            } else {
-              // 서브메뉴 내용을 최신 폴더 목록으로 업데이트
-              noteContextMenuSubmenu.innerHTML = '';
-              const folders = loadFolders();
-              folders.forEach(folder => {
-                // 사진 폴더는 제외 (자동으로 추가되므로)
-                if (folder.id === PHOTO_FOLDER_ID) return;
-                
-                const folderItem = document.createElement('button');
-                folderItem.type = 'button';
-                folderItem.className = 'note-context-menu-submenu-item';
-                folderItem.textContent = folder.name || '폴더';
-                folderItem.addEventListener('click', function() {
-                  const notes = loadNotes();
-                  const currentNote = notes.find(n => n.id === note.id);
-                  if (currentNote) {
-                    if (!currentNote.folderIds) {
-                      currentNote.folderIds = [];
-                    }
-                    if (!currentNote.folderIds.includes(folder.id)) {
-                      currentNote.folderIds.push(folder.id);
-                      saveNotes(notes);
-                      renderList(notes);
-                    }
-                  }
-                  hideNoteContextMenu();
-                });
-                noteContextMenuSubmenu.appendChild(folderItem);
-              });
-              
-              const rect = folderBtn.getBoundingClientRect();
-              noteContextMenuSubmenu.style.left = (rect.right + 4) + 'px';
-              noteContextMenuSubmenu.style.top = rect.top + 'px';
-              noteContextMenuSubmenu.style.display = 'flex';
-              // 이미 body에 추가되어 있지 않은 경우에만 추가
-              if (!noteContextMenuSubmenu.parentNode) {
-                document.body.appendChild(noteContextMenuSubmenu);
-              }
-              submenuVisible = true;
-              
-              // 서브메뉴 외부 클릭 시 닫기
-              setTimeout(() => {
-                const closeSubmenu = function(e) {
-                  if (noteContextMenuSubmenu && !noteContextMenuSubmenu.contains(e.target) && 
-                      !folderBtn.contains(e.target)) {
-                    noteContextMenuSubmenu.style.display = 'none';
-                    submenuVisible = false;
-                    document.removeEventListener('click', closeSubmenu);
-                    document.removeEventListener('touchend', closeSubmenu);
-                  }
-                };
-                document.addEventListener('click', closeSubmenu);
-                document.addEventListener('touchend', closeSubmenu);
-              }, 0);
             }
+            submenuVisible = false;
+          } else {
+            // 서브메뉴를 최신 폴더 목록으로 새로 생성
+            const submenu = createSubmenu();
+            const rect = folderBtn.getBoundingClientRect();
+            submenu.style.left = (rect.right + 4) + 'px';
+            submenu.style.top = rect.top + 'px';
+            submenu.style.display = 'flex';
+            document.body.appendChild(submenu);
+            submenuVisible = true;
+            
+            // 서브메뉴 외부 클릭 시 닫기
+            setTimeout(() => {
+              const closeSubmenu = function(e) {
+                if (noteContextMenuSubmenu && !noteContextMenuSubmenu.contains(e.target) && 
+                    !folderBtn.contains(e.target)) {
+                  noteContextMenuSubmenu.style.display = 'none';
+                  submenuVisible = false;
+                  document.removeEventListener('click', closeSubmenu);
+                  document.removeEventListener('touchend', closeSubmenu);
+                }
+              };
+              document.addEventListener('click', closeSubmenu);
+              document.addEventListener('touchend', closeSubmenu);
+            }, 0);
           }
         });
       } else {
         // PC: 마우스 오버로 서브메뉴 표시
         folderBtn.addEventListener('mouseenter', function() {
-          if (noteContextMenuSubmenu) {
-            const rect = folderBtn.getBoundingClientRect();
-            noteContextMenuSubmenu.style.left = (rect.right + 4) + 'px';
-            noteContextMenuSubmenu.style.top = rect.top + 'px';
-            noteContextMenuSubmenu.style.display = 'flex';
-            document.body.appendChild(noteContextMenuSubmenu);
-          }
+          // 서브메뉴를 최신 폴더 목록으로 새로 생성
+          const submenu = createSubmenu();
+          const rect = folderBtn.getBoundingClientRect();
+          submenu.style.left = (rect.right + 4) + 'px';
+          submenu.style.top = rect.top + 'px';
+          submenu.style.display = 'flex';
+          document.body.appendChild(submenu);
         });
 
         folderBtn.addEventListener('mouseleave', function(e) {
@@ -1263,15 +1252,6 @@
             }, 100);
           }
         });
-
-        if (noteContextMenuSubmenu) {
-          noteContextMenuSubmenu.addEventListener('mouseenter', function() {
-            noteContextMenuSubmenu.style.display = 'flex';
-          });
-          noteContextMenuSubmenu.addEventListener('mouseleave', function() {
-            noteContextMenuSubmenu.style.display = 'none';
-          });
-        }
       }
 
       noteContextMenu.appendChild(folderBtn);

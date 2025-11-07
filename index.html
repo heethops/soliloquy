@@ -5,44 +5,33 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>solioquy</title>
   <link rel="stylesheet" href="styles.css">
-  <!-- Firebase SDK -->
-  <script type="module">
-    // Import the functions you need from the SDKs you need
-    import { initializeApp } from "https://www.gstatic.com/firebasejs/12.5.0/firebase-app.js";
-    import { getFirestore, doc, setDoc, getDoc, onSnapshot, deleteDoc } from "https://www.gstatic.com/firebasejs/12.5.0/firebase-firestore.js";
+  <!-- GitHub Gist 동기화 -->
+  <script>
+    // GitHub Gist 동기화 초기화
+    window.githubSync = null;
+    window.githubReady = false;
     
-    // Your web app's Firebase configuration
-    const firebaseConfig = {
-      apiKey: "AIzaSyDvKloMdND9HumLOJnmbWjUkjOJWOl7KGY",
-      authDomain: "soliloquy-hee.firebaseapp.com",
-      projectId: "soliloquy-hee",
-      storageBucket: "soliloquy-hee.firebasestorage.app",
-      messagingSenderId: "902327259649",
-      appId: "1:902327259649:web:c6029ac400e587312da600",
-      measurementId: "G-H6JEP00G6W"
-    };
+    // 저장된 GitHub 토큰 확인
+    const savedToken = localStorage.getItem('github_token');
+    const savedGistId = localStorage.getItem('github_gist_id');
     
-    try {
-      // Initialize Firebase
-      const app = initializeApp(firebaseConfig);
-      const db = getFirestore(app);
-      
-      // 전역으로 사용할 수 있도록 설정
-      window.firebaseDb = db;
-      window.firebaseDoc = doc;
-      window.firebaseSetDoc = setDoc;
-      window.firebaseGetDoc = getDoc;
-      window.firebaseOnSnapshot = onSnapshot;
-      window.firebaseDeleteDoc = deleteDoc;
-      window.firebaseReady = true;
-      
-      console.log('Firebase 초기화 완료');
-      
-      // Firebase 준비 이벤트 발생
-      window.dispatchEvent(new Event('firebase-ready'));
-    } catch (error) {
-      console.error('Firebase 초기화 실패:', error);
-      window.firebaseReady = false;
+    if (savedToken) {
+      // GitHub 동기화 클래스 초기화
+      window.githubSync = {
+        token: savedToken,
+        gistId: savedGistId,
+        apiUrl: 'https://api.github.com',
+        fileName: 'soliloquy-data.json',
+        lastUpdated: localStorage.getItem('github_last_updated') || null
+      };
+      window.githubReady = true;
+      console.log('GitHub Gist 동기화 준비 완료');
+      window.dispatchEvent(new Event('github-ready'));
+    } else {
+      console.log('GitHub 토큰이 없습니다. 사용자 ID 입력 후 토큰을 입력하세요.');
+      window.githubReady = false;
+      // 준비 완료 이벤트 발생 (토큰 없어도 로컬 저장소는 사용 가능)
+      window.dispatchEvent(new Event('github-ready'));
     }
   </script>
 </head>
@@ -180,10 +169,28 @@
 
   <div id="user-id-modal" class="user-id-modal" style="display: none;">
     <div class="user-id-content">
-      <h2>사용자 ID 변경</h2>
-      <p>동기화를 위해 사용자 ID를 입력해주세요.</p>
-      <input id="user-id-input" type="text" placeholder="사용자 ID 입력" maxlength="50" />
-      <div class="user-id-buttons">
+      <h2>사용자 ID 설정</h2>
+      <p style="color: #666; font-size: 13px;">사용자 ID만 입력해도 사용할 수 있습니다. GitHub 토큰은 나중에 추가할 수 있습니다.</p>
+      <label style="display: block; margin-top: 12px; font-weight: bold;">사용자 ID <span style="color: #d32f2f;">(필수)</span></label>
+      <input id="user-id-input" type="text" placeholder="사용자 ID 입력" maxlength="50" style="width: 100%; padding: 8px; margin-top: 4px;" />
+      <label style="display: block; margin-top: 12px; font-weight: bold;">GitHub 토큰 <span style="color: #666; font-weight: normal; font-size: 12px;">(선택사항 - 나중에 추가 가능)</span></label>
+      <input id="github-token-input" type="password" placeholder="토큰 없이도 사용 가능합니다 (나중에 추가 가능)" style="width: 100%; padding: 8px; margin-top: 4px;" />
+      <div class="user-id-help" style="margin-top: 12px; padding: 12px; background: #f5f5f5; border-radius: 4px;">
+        <p style="font-size: 12px; color: #666; margin: 0;">
+          <strong>GitHub 토큰 생성 방법:</strong><br>
+          1. <a href="https://github.com/settings/tokens" target="_blank" style="color: #0066cc;">GitHub 토큰 설정 페이지</a> 열기<br>
+          2. "Generate new token (classic)" 클릭<br>
+          3. Note에 "Soliloquy" 입력<br>
+          4. Expiration 선택 (예: 90 days)<br>
+          5. <strong>"gist" 권한만 체크</strong><br>
+          6. "Generate token" 클릭 후 토큰 복사<br>
+          7. 위 입력란에 붙여넣기
+        </p>
+        <p style="font-size: 11px; color: #999; margin-top: 8px; margin-bottom: 0;">
+          💡 토큰 없이도 사용 가능하지만, 다른 기기와 동기화하려면 토큰이 필요합니다.
+        </p>
+      </div>
+      <div class="user-id-buttons" style="margin-top: 16px;">
         <button id="user-id-cancel" class="btn btn-cancel" type="button">취소</button>
         <button id="user-id-submit" class="btn" type="button">확인</button>
       </div>

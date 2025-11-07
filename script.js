@@ -38,6 +38,8 @@
     const nextMonthBtn = document.getElementById('next-month');
     /** @type {HTMLButtonElement|null} */
     const changeUserIdBtn = document.getElementById('change-user-id-btn');
+    /** @type {HTMLElement|null} */
+    const lastUpdatedEl = document.getElementById('last-updated');
     /** @type {HTMLButtonElement|null} */
     const clearFilterBtn = document.getElementById('clear-filter');
     /** @type {HTMLElement|null} */
@@ -715,6 +717,11 @@
             renderFolders();
           }
           
+          // 최종 업데이트 시간 표시
+          if (data.lastUpdated) {
+            updateLastUpdatedTime(data.lastUpdated);
+          }
+          
           if (data.notes && Array.isArray(data.notes)) {
             isSyncing = true;
             localStorage.setItem(STORAGE_KEY, JSON.stringify(data.notes));
@@ -794,6 +801,11 @@
               isSyncing = false;
               // 폴더 목록이 변경되면 UI 업데이트
               renderFolders();
+            }
+            
+            // 최종 업데이트 시간 표시
+            if (data.lastUpdated) {
+              updateLastUpdatedTime(data.lastUpdated);
             }
             
             if (data.notes && Array.isArray(data.notes)) {
@@ -913,6 +925,22 @@
         console.log('폴더 Firebase 저장 성공:', folders.length, '개 폴더');
       } catch (error) {
         console.error('폴더 Firebase 동기화 실패:', error);
+      }
+    }
+
+    // 업데이트 시간 표시 함수 (mm/dd hh:mm 형식)
+    function updateLastUpdatedTime(lastUpdatedStr) {
+      if (!lastUpdatedEl || !lastUpdatedStr) return;
+      
+      try {
+        const date = new Date(lastUpdatedStr);
+        const month = String(date.getMonth() + 1).padStart(2, '0');
+        const day = String(date.getDate()).padStart(2, '0');
+        const hours = String(date.getHours()).padStart(2, '0');
+        const minutes = String(date.getMinutes()).padStart(2, '0');
+        lastUpdatedEl.textContent = `${month}/${day} ${hours}:${minutes}`;
+      } catch (error) {
+        console.error('업데이트 시간 표시 실패:', error);
       }
     }
 

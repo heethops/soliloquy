@@ -57,6 +57,15 @@ html, body {
   color: #666666;
 }
 
+.last-updated {
+  position: absolute;
+  top: 36px;
+  right: 16px;
+  color: #888888;
+  font-size: 11px;
+  text-align: right;
+}
+
 .container {
   max-width: 1200px;
   margin: 0 auto;

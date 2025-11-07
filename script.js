@@ -712,9 +712,19 @@
             isSyncing = true;
             localStorage.setItem(FOLDERS_KEY, JSON.stringify(data.folders));
             isSyncing = false;
-            console.log('Firebase에서 폴더 로드 성공:', data.folders.length, '개 폴더');
+            console.log('Firebase에서 폴더 로드 성공:', data.folders.length, '개 폴더', data.folders);
             // 폴더 목록 UI 업데이트
             renderFolders();
+          } else {
+            console.log('Firebase 문서에 folders 필드 없음, 로컬 폴더 사용');
+            // Firebase에 폴더가 없으면 로컬 폴더를 Firebase에 저장
+            const localFolders = loadFolders();
+            if (localFolders.length > 0) {
+              console.log('로컬 폴더를 Firebase에 저장:', localFolders.length, '개');
+              syncFoldersToFirebase(localFolders).catch(err => {
+                console.error('로컬 폴더 Firebase 저장 실패:', err);
+              });
+            }
           }
           
           // 최종 업데이트 시간 표시
@@ -908,15 +918,18 @@
     // 폴더만 Firebase에 저장
     async function syncFoldersToFirebase(folders) {
       if (!isFirebaseEnabled()) {
+        console.log('폴더 동기화: Firebase 미설정');
         return;
       }
       
       const userId = getUserId();
       if (!userId) {
+        console.log('폴더 동기화: 사용자 ID 없음');
         return;
       }
       
       try {
+        console.log('폴더 Firebase 저장 시도:', folders.length, '개 폴더, userId:', userId);
         const dataDoc = window.firebaseDoc(window.firebaseDb, 'users', userId);
         await window.firebaseSetDoc(dataDoc, {
           folders: folders,
@@ -925,6 +938,7 @@
         console.log('폴더 Firebase 저장 성공:', folders.length, '개 폴더');
       } catch (error) {
         console.error('폴더 Firebase 동기화 실패:', error);
+        console.error('오류 상세:', error.code, error.message);
       }
     }
 
@@ -1299,27 +1313,22 @@
             // 서브메뉴를 최신 폴더 목록으로 새로 생성
             const submenu = createSubmenu();
             
-            // 모바일에서 서브메뉴 위치 조정 (화면 밖으로 나가지 않도록)
+            // 모바일에서 서브메뉴 위치: 폴더 추가 버튼의 오른쪽에 바로 표시
             const rect = folderBtn.getBoundingClientRect();
-            const menuRect = noteContextMenu ? noteContextMenu.getBoundingClientRect() : rect;
-            const submenuWidth = 200; // 대략적인 서브메뉴 너비
-            const submenuHeight = Math.min(300, submenu.scrollHeight || 300);
-            
-            let left = menuRect.right + 4;
+            let left = rect.right + 4;
             let top = rect.top;
             
-            // 화면 오른쪽 경계 확인
+            // 화면 오른쪽 경계 확인 - 서브메뉴가 화면 밖으로 나가면 왼쪽에 표시
+            const submenuWidth = 180; // 대략적인 서브메뉴 너비
             if (left + submenuWidth > window.innerWidth) {
-              // 메뉴 왼쪽에 표시
-              left = menuRect.left - submenuWidth - 4;
+              left = rect.left - submenuWidth - 4;
               if (left < 10) {
-                // 여전히 화면 밖이면 메뉴 아래에 표시
-                left = menuRect.left;
-                top = menuRect.bottom + 4;
+                left = 10;
               }
             }
             
             // 화면 아래쪽 경계 확인
+            const submenuHeight = Math.min(300, submenu.scrollHeight || 300);
             if (top + submenuHeight > window.innerHeight) {
               top = window.innerHeight - submenuHeight - 10;
             }

@@ -2362,61 +2362,32 @@
       updateTotalNotesCount();
       console.log('로컬 저장 완료:', { text: value.substring(0, 50), images: imagesToSave.length });
       
-      // Firebase 동기화 - 글 작성 시 무조건 즉시 저장
+      // Firebase 동기화 - 백그라운드에서 비동기 처리 (UI 블로킹 없음)
       if (isFirebaseEnabled()) {
-        try {
-          // 이미지가 포함된 경우 데이터 크기 확인
-          if (imagesToSave.length > 0) {
-            const dataSize = JSON.stringify(notes).length;
-            const dataSizeKB = Math.round(dataSize / 1024);
-            console.log('이미지 포함 데이터 크기:', dataSizeKB + 'KB', `(${imagesToSave.length}개 이미지)`);
-            
-            // Firebase Firestore 문서 크기 제한 확인 (1MB = 1024KB)
-            if (dataSize > 1000 * 1024) {
-              console.error('❌ 데이터 크기가 너무 큽니다:', dataSizeKB + 'KB', '(제한: 1000KB)');
-              showToast('이미지가 너무 커서 동기화할 수 없습니다');
-              return; // 저장하지 않고 종료
+        // 비동기로 처리해서 전송 속도 개선
+        (async () => {
+          try {
+            // 이미지가 포함된 경우 데이터 크기 확인
+            if (imagesToSave.length > 0) {
+              const dataSize = JSON.stringify(notes).length;
+              const dataSizeKB = Math.round(dataSize / 1024);
+              
+              // Firebase Firestore 문서 크기 제한 확인 (1MB = 1024KB)
+              if (dataSize > 1000 * 1024) {
+                console.error('❌ 데이터 크기가 너무 큽니다:', dataSizeKB + 'KB', '(제한: 1000KB)');
+                showToast('이미지가 너무 커서 동기화할 수 없습니다');
+                return;
+              }
             }
+            
+            // forceSync: true로 무조건 저장 (백그라운드에서)
+            await syncToFirebase(notes, true);
+            console.log('✅ 메모가 Firebase에 저장되었습니다');
+          } catch (err) {
+            console.error('❌ Firebase 저장 실패:', err);
+            // 에러는 콘솔에만 표시, 토스트 없음
           }
-          
-          // 강제 동기화 (새 메모가 추가되었으므로 무조건 저장)
-          console.log('🔥 Firebase 즉시 동기화 시작...', {
-            notesCount: notes.length,
-            imagesCount: imagesToSave.length,
-            hasText: !!value,
-            isFirebaseReady: window.firebaseReady,
-            hasDb: !!window.firebaseDb
-          });
-          
-          // forceSync: true로 무조건 저장
-          const syncSuccess = await syncToFirebase(notes, true);
-          if (syncSuccess) {
-            console.log('✅✅✅ 메모가 Firebase에 저장되었습니다! (이미지 포함:', imagesToSave.length, '개)');
-            showToast('저장 완료');
-          } else {
-            console.error('❌❌❌ Firebase 동기화 실패, 로컬에는 저장됨');
-            showToast('동기화 실패, 로컬에는 저장됨');
-            // 로컬에는 저장되었으므로 계속 진행
-          }
-        } catch (err) {
-          console.error('❌❌❌ Firebase 저장 중 에러 발생:', err);
-          console.error('에러 상세:', {
-            message: err.message,
-            code: err.code,
-            stack: err.stack,
-            name: err.name
-          });
-          showToast('동기화 실패: ' + (err.message || '알 수 없는 오류'));
-          // 저장 실패해도 로컬에는 저장되었으므로 계속 진행
-        }
-      } else {
-        console.error('❌ Firebase가 활성화되지 않음!', {
-          firebaseReady: window.firebaseReady,
-          hasDb: !!window.firebaseDb,
-          hasDoc: !!window.firebaseDoc,
-          hasSetDoc: !!window.firebaseSetDoc
-        });
-        showToast('Firebase 연결 실패');
+        })();
       }
       
       renderList(notes);

@@ -225,97 +225,12 @@
       // 더 이상 사용하지 않음
     }
     
-    // 토큰 입력창 표시/숨김 제어 함수
-    function toggleTokenInput(show) {
-      if (githubTokenInput) {
-        githubTokenInput.style.display = show ? 'block' : 'none';
-      }
-      if (githubTokenLabel) {
-        githubTokenLabel.style.display = show ? 'block' : 'none';
-      }
-      if (userIdHelp) {
-        userIdHelp.style.display = show ? 'block' : 'none';
-      }
-    }
     
     
-    // 사용자 ID 변경 (Firebase 데이터 마이그레이션)
+    // 사용자 ID 변경 (Firebase 데이터 마이그레이션) - 사용하지 않음
     async function migrateUserId(oldUserId, newUserId) {
-      // GitHub Gist는 사용자 ID 기반이므로 마이그레이션 불필요
-      // Gist ID는 사용자 ID와 무관하게 동작
+      // 사용자 ID 기능이 제거되어 더 이상 사용하지 않음
       return false;
-      
-      try {
-        // 기존 ID의 데이터 가져오기
-        const oldDoc = window.firebaseDoc(window.firebaseDb, 'users', oldUserId);
-        const oldSnap = await window.firebaseGetDoc(oldDoc);
-        
-        if (oldSnap.exists()) {
-          const oldData = oldSnap.data();
-          
-          // 새로운 ID로 데이터 복사
-          const newDoc = window.firebaseDoc(window.firebaseDb, 'users', newUserId);
-          await window.firebaseSetDoc(newDoc, {
-            ...oldData,
-            lastUpdated: new Date().toISOString()
-          });
-          
-          // 로컬 스토리지도 업데이트
-          if (oldData.notes && Array.isArray(oldData.notes)) {
-            localStorage.setItem(STORAGE_KEY, JSON.stringify(oldData.notes));
-          }
-          if (oldData.profileBio !== undefined) {
-            localStorage.setItem(PROFILE_BIO_KEY, oldData.profileBio || '');
-          }
-          if (oldData.profileName !== undefined) {
-            localStorage.setItem(PROFILE_NAME_KEY, oldData.profileName || '');
-          }
-          if (oldData.profileImage !== undefined) {
-            if (oldData.profileImage) {
-              localStorage.setItem(PROFILE_IMAGE_KEY, oldData.profileImage);
-            } else {
-              localStorage.removeItem(PROFILE_IMAGE_KEY);
-            }
-          }
-          
-          // 기존 ID 문서의 모든 데이터 삭제하고 migratedTo만 남김 (다른 기기에서 자동 변경 감지를 위해)
-          // 기존 문서를 삭제하고 migratedTo만 있는 새 문서 생성
-          await window.firebaseDeleteDoc(oldDoc);
-          await window.firebaseSetDoc(oldDoc, {
-            migratedTo: newUserId,
-            migrationTime: new Date().toISOString()
-          });
-          
-          return true;
-        } else {
-          // 기존 ID 문서에 migratedTo 필드만 추가 (다른 기기에서 자동 변경을 위해)
-          await window.firebaseSetDoc(oldDoc, {
-            migratedTo: newUserId,
-            migrationTime: new Date().toISOString()
-          });
-          
-          // 로컬 데이터를 새 ID로 Firebase에 저장
-          const localNotes = loadNotes();
-          const localFolders = loadFolders();
-          if (localNotes.length > 0 || localFolders.length > 0) {
-            const newDoc = window.firebaseDoc(window.firebaseDb, 'users', newUserId);
-            const newData = {
-              notes: localNotes,
-              folders: localFolders,
-              profileBio: localStorage.getItem(PROFILE_BIO_KEY) || '',
-              profileName: localStorage.getItem(PROFILE_NAME_KEY) || '',
-              profileImage: localStorage.getItem(PROFILE_IMAGE_KEY) || null,
-              lastUpdated: new Date().toISOString()
-            };
-            await window.firebaseSetDoc(newDoc, newData);
-          }
-          
-          return true;
-        }
-      } catch (error) {
-        console.error('사용자 ID 마이그레이션 실패:', error);
-        return false;
-      }
     }
     
     // 사용자 ID 제출 함수 제거됨
@@ -336,74 +251,6 @@
       // UI 제거됨
     }
 
-    // 두 사용자 데이터 합치기
-    async function mergeUsers(userId1, userId2) {
-      // GitHub Gist는 사용자 ID 기반이 아니므로 병합 불필요
-      console.warn('GitHub Gist에서는 사용자 병합이 지원되지 않습니다.');
-      return;
-      
-      try {
-        
-        // 두 사용자의 데이터 가져오기
-        const doc1 = window.firebaseDoc(window.firebaseDb, 'users', userId1);
-        const doc2 = window.firebaseDoc(window.firebaseDb, 'users', userId2);
-        
-        const snap1 = await window.firebaseGetDoc(doc1);
-        const snap2 = await window.firebaseGetDoc(doc2);
-        
-        const notes1 = snap1.exists() && snap1.data().notes ? snap1.data().notes : [];
-        const notes2 = snap2.exists() && snap2.data().notes ? snap2.data().notes : [];
-        
-        
-        // 중복 제거 (id 기준)
-        const mergedNotes = [];
-        const noteIds = new Set();
-        
-        // 먼저 사용자 1의 노트 추가
-        for (const note of notes1) {
-          if (!noteIds.has(note.id)) {
-            mergedNotes.push(note);
-            noteIds.add(note.id);
-          }
-        }
-        
-        // 사용자 2의 노트 추가 (중복 제외)
-        for (const note of notes2) {
-          if (!noteIds.has(note.id)) {
-            mergedNotes.push(note);
-            noteIds.add(note.id);
-          }
-        }
-        
-        // 생성 시간 순으로 정렬
-        mergedNotes.sort((a, b) => new Date(a.createdAt) - new Date(b.createdAt));
-        
-        // 로컬 저장소에 저장
-        localStorage.setItem(STORAGE_KEY, JSON.stringify(mergedNotes));
-        
-        // 화면 업데이트
-        renderList(mergedNotes);
-        
-        showToast(`두 사용자 데이터를 합쳤습니다. 총 ${mergedNotes.length}개의 노트가 있습니다.`);
-        
-        return mergedNotes;
-      } catch (error) {
-        console.error('사용자 데이터 합치기 실패:', error);
-        showToast('데이터 합치기에 실패했습니다.');
-      }
-    }
-    
-    // 전역 함수로 등록 (콘솔에서 사용 가능)
-    window.mergeUsers = mergeUsers;
-    // 사용자 ID 관련 전역 함수 제거됨
-    
-    // 모든 사용자 ID 찾기 함수 제거됨
-    async function findAllUserIds() {
-      // 사용자 ID 기능 제거됨
-      return [];
-    }
-    
-    window.findAllUserIds = findAllUserIds;
 
     // Firebase 동기화 활성화 여부 확인
     function isFirebaseEnabled() {
@@ -450,7 +297,7 @@
             // 품질을 낮춤
             if (quality > 0.1) {
               quality = Math.max(0.1, quality - 0.1);
-            } else {
+        } else {
               // 품질이 최저이면 크기를 줄임
               const ratio = Math.sqrt(maxSize / compressed.length) * 0.9; // 90%로 더 작게
               width = Math.max(100, Math.round(originalWidth * ratio));
@@ -702,120 +549,6 @@
       }
     }
 
-    // GitHub Gist에 데이터 저장 (레거시 함수, 호환성 유지)
-    async function syncToGitHub(notes) {
-      if (!isGitHubEnabled()) {
-        console.warn('GitHub 동기화가 활성화되지 않았습니다.');
-        return;
-      }
-
-      console.log('GitHub에 동기화 시작...', {
-        notesCount: notes.length,
-        hasGistId: !!window.githubSync.gistId
-      });
-
-      try {
-        // 데이터가 실제로 변경되었는지 확인
-        const folders = loadFolders();
-        const profileData = {
-          notes: notes,
-          folders: folders,
-          profileBio: localStorage.getItem(PROFILE_BIO_KEY) || '',
-          profileName: localStorage.getItem(PROFILE_NAME_KEY) || '',
-          profileImage: localStorage.getItem(PROFILE_IMAGE_KEY) || '',
-          lastUpdated: new Date().toISOString()
-        };
-        
-        const dataStr = JSON.stringify(profileData);
-        if (lastSyncedData === dataStr) {
-          // 데이터가 변경되지 않았으면 동기화하지 않음
-          console.log('데이터 변경 없음, 동기화 스킵');
-          return;
-        }
-
-        isSyncing = true;
-        const content = JSON.stringify(profileData, null, 2);
-        
-        const gistData = {
-          description: 'Soliloquy 메모 데이터',
-          public: false, // 비공개 Gist
-          files: {
-            [window.githubSync.fileName]: {
-              content: content
-            }
-          }
-        };
-
-        if (window.githubSync.gistId) {
-          // 기존 Gist 업데이트
-          console.log('기존 Gist 업데이트 중...', window.githubSync.gistId);
-          await githubApiCall(`/gists/${window.githubSync.gistId}`, 'PATCH', gistData);
-          console.log('Gist 업데이트 완료');
-        } else {
-          // 새 Gist 생성
-          console.log('새 Gist 생성 중...');
-          const result = await githubApiCall('/gists', 'POST', gistData);
-          window.githubSync.gistId = result.id;
-          localStorage.setItem('github_gist_id', result.id);
-          console.log('Gist 생성 완료:', result.id);
-        }
-
-        // 동기화 성공 시 마지막 동기화 데이터 저장
-        lastSyncedData = dataStr;
-        localStorage.setItem('github_last_updated', new Date().toISOString());
-        console.log('GitHub 동기화 성공');
-      } catch (error) {
-        console.error('GitHub 동기화 실패:', error);
-        if (error.message?.includes('Bad credentials') || error.message?.includes('401')) {
-          console.warn('GitHub 토큰이 유효하지 않습니다. 토큰을 다시 입력하세요.');
-          showToast('GitHub 토큰이 유효하지 않습니다.');
-        } else if (error.message?.includes('rate limit')) {
-          showToast('API 호출 제한에 도달했습니다. 잠시 후 다시 시도해주세요.');
-        } else if (error.message?.includes('권한') || error.message?.includes('403')) {
-          // 403 오류 시 Gist ID 초기화하고 새로 생성 시도
-          console.warn('Gist 권한 오류. Gist ID를 초기화하고 새로 생성합니다.');
-          localStorage.removeItem('github_gist_id');
-          window.githubSync.gistId = null;
-          
-          // 새 Gist 생성 시도
-          try {
-            const folders = loadFolders();
-            const profileData = {
-              notes: notes,
-              folders: folders,
-              profileBio: localStorage.getItem(PROFILE_BIO_KEY) || '',
-              profileName: localStorage.getItem(PROFILE_NAME_KEY) || '',
-              profileImage: localStorage.getItem(PROFILE_IMAGE_KEY) || '',
-              lastUpdated: new Date().toISOString()
-            };
-            const content = JSON.stringify(profileData, null, 2);
-            const gistData = {
-              description: 'Soliloquy 메모 데이터',
-              public: false,
-              files: {
-                [window.githubSync.fileName]: {
-                  content: content
-                }
-              }
-            };
-            const result = await githubApiCall('/gists', 'POST', gistData);
-            window.githubSync.gistId = result.id;
-            localStorage.setItem('github_gist_id', result.id);
-            localStorage.setItem('github_last_updated', new Date().toISOString());
-            lastSyncedData = JSON.stringify(profileData);
-            console.log('새 Gist 생성 완료:', result.id);
-            showToast('새 Gist가 생성되었습니다.');
-          } catch (retryError) {
-            console.error('Gist 재생성 실패:', retryError);
-            showToast('토큰 권한이 없습니다. GitHub에서 토큰 생성 시 "gist" 권한을 체크해주세요.');
-          }
-        } else {
-          showToast('동기화 실패: ' + error.message);
-        }
-      } finally {
-        isSyncing = false;
-      }
-    }
 
     // Firebase에서 데이터 읽기 (quota 절약: 수동 동기화만 사용)
     async function syncFromFirebase() {
@@ -845,8 +578,24 @@
         if (data.profileImage !== undefined) {
           if (data.profileImage) {
             localStorage.setItem(PROFILE_IMAGE_KEY, data.profileImage);
+            // 프로필 이미지를 favicon으로 설정
+            updateFaviconFromProfileImage(data.profileImage);
+            // 프로필 이미지 UI 업데이트
+            if (profileImg && profileImagePlaceholder) {
+              profileImg.src = data.profileImage;
+              profileImg.style.display = 'block';
+              profileImagePlaceholder.style.display = 'none';
+            }
           } else {
             localStorage.removeItem(PROFILE_IMAGE_KEY);
+            // Favicon 초기화
+            updateFaviconFromProfileImage(null);
+            // 프로필 이미지 UI 업데이트
+            if (profileImg && profileImagePlaceholder) {
+              profileImg.src = '';
+              profileImg.style.display = 'none';
+              profileImagePlaceholder.style.display = 'flex';
+            }
           }
         }
 
@@ -875,76 +624,6 @@
       return null;
     }
 
-    // GitHub Gist에서 데이터 읽기
-    async function syncFromGitHub() {
-      if (!isGitHubEnabled()) {
-        return null;
-      }
-
-      if (!window.githubSync.gistId) {
-        // 저장된 Gist ID 확인
-        const savedGistId = localStorage.getItem('github_gist_id');
-        if (savedGistId) {
-          window.githubSync.gistId = savedGistId;
-        } else {
-          return null; // Gist가 없음
-        }
-      }
-
-      try {
-        const gist = await githubApiCall(`/gists/${window.githubSync.gistId}`);
-        const file = gist.files[window.githubSync.fileName];
-        
-        if (!file) {
-          return null;
-        }
-
-        // 파일 내용 파싱
-        const data = JSON.parse(file.content);
-
-        // 프로필 정보 동기화
-        if (data.profileBio !== undefined) {
-          localStorage.setItem(PROFILE_BIO_KEY, data.profileBio || '');
-        }
-        if (data.profileName !== undefined) {
-          localStorage.setItem(PROFILE_NAME_KEY, data.profileName || '');
-        }
-        if (data.profileImage !== undefined) {
-          if (data.profileImage) {
-            localStorage.setItem(PROFILE_IMAGE_KEY, data.profileImage);
-          } else {
-            localStorage.removeItem(PROFILE_IMAGE_KEY);
-          }
-        }
-
-        // 폴더 동기화
-        if (data.folders && Array.isArray(data.folders) && data.folders.length > 0) {
-          isSyncing = true;
-          localStorage.setItem(FOLDERS_KEY, JSON.stringify(data.folders));
-          isSyncing = false;
-          renderFolders();
-        }
-
-        // 최종 업데이트 시간 표시
-        if (data.lastUpdated) {
-          updateLastUpdatedTime(data.lastUpdated);
-          localStorage.setItem('github_last_updated', gist.updated_at);
-        }
-
-        if (data.notes && Array.isArray(data.notes)) {
-          isSyncing = true;
-          localStorage.setItem(STORAGE_KEY, JSON.stringify(data.notes));
-          isSyncing = false;
-          return data.notes;
-        }
-      } catch (error) {
-        console.error('GitHub에서 동기화 실패:', error);
-        if (error.message?.includes('404') || error.message?.includes('Not Found')) {
-          console.warn('Gist를 찾을 수 없습니다.');
-        }
-      }
-      return null;
-    }
 
     // Firebase 동기화 업데이트 확인 (다른 기기/Firebase 콘솔에서 변경사항 감지)
     async function checkFirebaseUpdates() {
@@ -959,8 +638,8 @@
         const docSnap = await window.firebaseGetDoc(userDoc);
         
         if (!docSnap.exists()) {
-          return;
-        }
+        return;
+      }
 
         const data = docSnap.data();
         const lastUpdated = localStorage.getItem('firebase_last_updated');
@@ -969,12 +648,12 @@
         if (lastUpdated !== currentUpdated) {
           // 업데이트 있음
           const cloudNotes = await syncFromFirebase();
-          if (cloudNotes && cloudNotes.length > 0) {
-            const currentLocalNotes = loadNotes();
-            if (JSON.stringify(cloudNotes) !== JSON.stringify(currentLocalNotes)) {
-              renderList(cloudNotes);
-            }
+        if (cloudNotes && cloudNotes.length > 0) {
+          const currentLocalNotes = loadNotes();
+          if (JSON.stringify(cloudNotes) !== JSON.stringify(currentLocalNotes)) {
+            renderList(cloudNotes);
           }
+        }
         }
       } catch (error) {
         console.error('업데이트 확인 오류:', error);
@@ -995,82 +674,6 @@
       }
     }
 
-    // GitHub 동기화 업데이트 확인 (폴링)
-    async function checkGitHubUpdates() {
-      if (!isGitHubEnabled() || !window.githubSync.gistId || isSyncing) {
-        return;
-      }
-
-      try {
-        const gist = await githubApiCall(`/gists/${window.githubSync.gistId}`);
-        const file = gist.files[window.githubSync.fileName];
-        
-        if (!file) return;
-
-        // 마지막 업데이트 시간 확인
-        const lastUpdated = localStorage.getItem('github_last_updated');
-        const currentUpdated = gist.updated_at;
-
-        if (lastUpdated !== currentUpdated) {
-          // 업데이트 있음
-          const data = await syncFromGitHub();
-          if (data && data.length > 0) {
-            renderList(data);
-          }
-        }
-      } catch (error) {
-        console.error('업데이트 확인 오류:', error);
-        if (error.message?.includes('rate limit')) {
-          // Rate limit 발생 시 폴링 중지하고 1시간 후 재시도
-          console.warn('API 호출 제한 도달. 폴링을 중지합니다.');
-          stopGitHubSync();
-          showToast('API 호출 제한에 도달했습니다. 1시간 후 자동으로 재시도합니다.');
-          
-          // 1시간 후 재시도
-          setTimeout(() => {
-            if (isGitHubEnabled()) {
-              startGitHubSync();
-              showToast('동기화를 재개합니다.');
-            }
-          }, 60 * 60 * 1000); // 1시간
-        }
-      }
-    }
-
-    // GitHub 동기화 시작 (폴링)
-    function startGitHubSync() {
-      if (!isGitHubEnabled()) {
-        return;
-      }
-
-      // 이미 폴링이 실행 중이면 다시 시작하지 않음
-      if (githubPollInterval) {
-        return;
-      }
-
-      // 초기 동기화
-      syncFromGitHub().then(cloudNotes => {
-        if (cloudNotes && cloudNotes.length > 0) {
-          const currentLocalNotes = loadNotes();
-          if (JSON.stringify(cloudNotes) !== JSON.stringify(currentLocalNotes)) {
-            renderList(cloudNotes);
-          }
-        }
-      });
-
-      // 30초마다 업데이트 확인 (API 호출 제한 방지)
-      githubPollInterval = setInterval(() => {
-        checkGitHubUpdates();
-      }, 30000);
-    }
-
-    // GitHub 동기화 중지
-    function stopGitHubSync() {
-      if (githubPollInterval) {
-        clearInterval(githubPollInterval);
-        githubPollInterval = null;
-      }
-    }
 
     function loadNotes() {
       try {
@@ -1190,23 +793,13 @@
       // Firebase 즉시 동기화 (skipSync가 true이면 건너뛰기 - 무한 재귀 방지)
       // syncToFirebase가 notes와 folders를 함께 저장하므로 notes를 로드해서 동기화
       if (!skipSync && isFirebaseEnabled() && !isSyncing) {
-        const notes = loadNotes();
+          const notes = loadNotes();
         syncToFirebase(notes).catch(err => {
           console.error('Firebase 저장 실패 (재시도 안 함):', err);
-        });
+          });
       }
     }
     
-    // 폴더만 GitHub에 저장 (기존 함수명 유지)
-    async function syncFoldersToFirebase(folders) {
-      // GitHub로 전환되었지만 호환성을 위해 함수명 유지
-      // syncToGitHub가 notes와 folders를 함께 저장하므로 notes를 로드해서 동기화
-      if (!isGitHubEnabled()) {
-        return;
-      }
-      const notes = loadNotes();
-      await syncToGitHub(notes);
-    }
 
     // 업데이트 시간 표시 함수 (mm/dd hh:mm 형식)
     function updateLastUpdatedTime(lastUpdatedStr) {
@@ -1224,13 +817,6 @@
       }
     }
     
-    // 저장된 최종 수정 시간 표시 (초기화 시)
-    function displaySavedLastUpdated() {
-      const savedLastUpdated = localStorage.getItem('github_last_updated');
-      if (savedLastUpdated) {
-        updateLastUpdatedTime(savedLastUpdated);
-      }
-    }
 
     // 날짜 문자열 생성 (YYYY-MM-DD)
     function formatDateString(date) {
@@ -1299,6 +885,68 @@
     }
 
     // 프로필 사진 로드
+    // 프로필 이미지를 favicon으로 설정
+    function updateFaviconFromProfileImage(imageData) {
+      if (!imageData) {
+        // 프로필 이미지가 없으면 기본 아이콘 사용 (또는 빈 상태 유지)
+        const faviconLink = document.getElementById('favicon');
+        const appleTouchIconLink = document.getElementById('apple-touch-icon');
+        if (faviconLink) faviconLink.href = '';
+        if (appleTouchIconLink) appleTouchIconLink.href = '';
+        return;
+      }
+
+      try {
+        const img = new Image();
+        img.onload = function() {
+          // Favicon 생성 (32x32)
+          const faviconCanvas = document.createElement('canvas');
+          faviconCanvas.width = 32;
+          faviconCanvas.height = 32;
+          const faviconCtx = faviconCanvas.getContext('2d');
+          faviconCtx.drawImage(img, 0, 0, 32, 32);
+          const faviconDataUrl = faviconCanvas.toDataURL('image/png');
+
+          // Apple Touch Icon 생성 (180x180)
+          const appleCanvas = document.createElement('canvas');
+          appleCanvas.width = 180;
+          appleCanvas.height = 180;
+          const appleCtx = appleCanvas.getContext('2d');
+          appleCtx.drawImage(img, 0, 0, 180, 180);
+          const appleDataUrl = appleCanvas.toDataURL('image/png');
+
+          // Favicon 업데이트 (기존 링크 태그가 있으면 업데이트, 없으면 생성)
+          let faviconLink = document.getElementById('favicon');
+          if (!faviconLink) {
+            faviconLink = document.createElement('link');
+            faviconLink.id = 'favicon';
+            faviconLink.rel = 'icon';
+            faviconLink.type = 'image/png';
+            document.head.appendChild(faviconLink);
+          }
+          faviconLink.href = faviconDataUrl;
+
+          // Apple Touch Icon 업데이트 (기존 링크 태그가 있으면 업데이트, 없으면 생성)
+          let appleTouchIconLink = document.getElementById('apple-touch-icon');
+          if (!appleTouchIconLink) {
+            appleTouchIconLink = document.createElement('link');
+            appleTouchIconLink.id = 'apple-touch-icon';
+            appleTouchIconLink.rel = 'apple-touch-icon';
+            document.head.appendChild(appleTouchIconLink);
+          }
+          appleTouchIconLink.href = appleDataUrl;
+
+          console.log('✅ Favicon이 프로필 이미지로 업데이트되었습니다');
+        };
+        img.onerror = function() {
+          console.warn('프로필 이미지를 favicon으로 변환 실패');
+        };
+        img.src = imageData;
+      } catch (error) {
+        console.error('Favicon 업데이트 오류:', error);
+      }
+    }
+
     function loadProfileImage() {
       try {
         const imageData = localStorage.getItem(PROFILE_IMAGE_KEY);
@@ -1307,6 +955,8 @@
           profileImg.style.display = 'block';
           profileImagePlaceholder.style.display = 'none';
         }
+        // 프로필 이미지를 favicon으로 설정
+        updateFaviconFromProfileImage(imageData);
       } catch {
         // 로드 실패 시 무시
       }
@@ -1316,6 +966,8 @@
     function saveProfileImage(imageData) {
       try {
         localStorage.setItem(PROFILE_IMAGE_KEY, imageData);
+        // 프로필 이미지를 favicon으로 설정
+        updateFaviconFromProfileImage(imageData);
         // Firebase에도 저장
         if (isFirebaseEnabled() && !isSyncing) {
           syncProfileToFirebase();
@@ -1334,6 +986,8 @@
           profileImg.style.display = 'none';
           profileImagePlaceholder.style.display = 'flex';
         }
+        // Favicon도 초기화
+        updateFaviconFromProfileImage(null);
         // Firebase에도 저장
         if (isFirebaseEnabled() && !isSyncing) {
           syncProfileToFirebase();
@@ -1342,7 +996,7 @@
         // 삭제 실패 시 무시
       }
     }
-
+    
     function updateProfileBio() {
       if (!profileBioInput) return;
       const bio = loadProfileBio();
@@ -1684,7 +1338,7 @@
         // 모바일에서는 click 이벤트만 사용 (touchend는 사용하지 않음)
         document.addEventListener('click', closeMenu);
         if (window.innerWidth > 768) {
-          document.addEventListener('touchend', closeMenu);
+        document.addEventListener('touchend', closeMenu);
         }
       }, 0);
     }
@@ -2326,14 +1980,14 @@
             if (hasPhotoFolder) {
               const hasImages = (n.images && n.images.length > 0) || n.imageData;
               if (hasImages) {
-                matchingNotes.add(n.id);
-                // 부모 글도 포함
-                if (n.parentId) {
-                  matchingNotes.add(n.parentId);
-                }
-                // 자식 글들도 포함
-                const children = allChildNotesMap.get(n.id) || [];
-                children.forEach(child => matchingNotes.add(child.id));
+              matchingNotes.add(n.id);
+              // 부모 글도 포함
+              if (n.parentId) {
+                matchingNotes.add(n.parentId);
+              }
+              // 자식 글들도 포함
+              const children = allChildNotesMap.get(n.id) || [];
+              children.forEach(child => matchingNotes.add(child.id));
               }
             }
             // 다른 폴더들 확인
@@ -2746,7 +2400,7 @@
         
         try {
           const compressPromises = [];
-          for (const file of Array.from(files)) {
+        for (const file of Array.from(files)) {
             // 이미지 파일만 처리
             if (file.type.startsWith('image/')) {
               compressPromises.push(
@@ -2867,19 +2521,22 @@
       localStorage.removeItem(PROFILE_BIO_KEY);
       localStorage.removeItem(PROFILE_IMAGE_KEY);
       localStorage.removeItem(PROFILE_NAME_KEY);
+      localStorage.removeItem('firebase_last_synced_data');
+      localStorage.removeItem('firebase_last_updated');
       
-      // GitHub Gist에서도 데이터 삭제
-      if (isGitHubEnabled() && window.githubSync && window.githubSync.gistId) {
+      // Firebase에서도 데이터 삭제
+      if (isFirebaseEnabled()) {
         try {
-          await githubApiCall(`/gists/${window.githubSync.gistId}`, 'DELETE');
-          localStorage.removeItem('github_gist_id');
-          localStorage.removeItem('github_last_updated');
-          window.githubSync.gistId = null;
-          console.log('GitHub Gist 데이터 삭제 완료');
+          const userId = getUserId();
+          const userDoc = window.firebaseDoc(window.firebaseDb, 'users', userId);
+          await window.firebaseDeleteDoc(userDoc);
+          console.log('Firebase 데이터 삭제 완료');
         } catch (error) {
-          console.error('GitHub Gist 데이터 삭제 실패:', error);
+          console.error('Firebase 데이터 삭제 실패:', error);
+          // Firebase 삭제 실패해도 로컬은 이미 삭제되었으므로 계속 진행
         }
       }
+      
     }
 
     // 백업 삭제
@@ -2913,7 +2570,11 @@
         resetConfirmModal.style.display = 'flex';
       });
 
-      resetConfirmYes.addEventListener('click', async function() {
+      resetConfirmYes.addEventListener('click', async function(e) {
+        e.stopPropagation(); // 모달 외부 클릭 이벤트 방지
+        // 모달 닫기
+        resetConfirmModal.style.display = 'none';
+        
         // 데이터 백업
         if (backupData()) {
           // 데이터 초기화 (Firebase 포함)
@@ -2925,10 +2586,10 @@
         } else {
           showToast('백업 중 오류가 발생했습니다.');
         }
-        resetConfirmModal.style.display = 'none';
       });
 
-      resetConfirmNo.addEventListener('click', function() {
+      resetConfirmNo.addEventListener('click', function(e) {
+        e.stopPropagation(); // 모달 외부 클릭 이벤트 방지
         resetConfirmModal.style.display = 'none';
       });
 
@@ -3637,75 +3298,12 @@
     renderList(localNotes);
     
     // 초기 렌더
-    // GitHub 동기화 초기화
-    function initGitHubSync() {
-      if (!isGitHubEnabled()) {
-        console.warn('GitHub 동기화가 활성화되지 않았습니다.');
-        return;
-      }
-      
-      console.log('initGitHubSync 시작', {
-        hasToken: !!window.githubSync.token,
-        hasGistId: !!window.githubSync.gistId
-      });
-      
-      // Gist ID가 없으면 먼저 로컬 데이터를 저장해서 Gist 생성
-      if (!window.githubSync.gistId) {
-        const savedGistId = localStorage.getItem('github_gist_id');
-        if (!savedGistId) {
-          // Gist가 없으면 로컬 데이터를 먼저 저장해서 Gist 생성
-          const localNotes = loadNotes();
-          console.log('Gist가 없어서 로컬 데이터를 먼저 저장합니다. 메모 개수:', localNotes.length);
-          
-          // 메모가 없어도 빈 배열로 Gist 생성
-          syncToGitHub(localNotes).then(() => {
-            console.log('Gist 생성/업데이트 완료');
-            // Gist 생성 후 동기화 시작
-            syncFromGitHub().then(cloudNotes => {
-              if (cloudNotes && cloudNotes.length > 0) {
-                const currentLocalNotes = loadNotes();
-                if (JSON.stringify(cloudNotes) !== JSON.stringify(currentLocalNotes)) {
-                  renderList(cloudNotes);
-                }
-              }
-              startGitHubSync();
-            }).catch((error) => {
-              console.error('GitHub 동기화 오류:', error);
-              showToast('동기화 오류: ' + error.message);
-            });
-          }).catch((error) => {
-            console.error('Gist 생성 오류:', error);
-            showToast('Gist 생성 실패: ' + error.message);
-          });
-          return;
-        } else {
-          window.githubSync.gistId = savedGistId;
-        }
-      }
-      
-      syncFromGitHub().then(cloudNotes => {
-        // GitHub에서 데이터를 가져왔고, 로컬과 다르면 업데이트
-        if (cloudNotes && cloudNotes.length > 0) {
-          const currentLocalNotes = loadNotes();
-          // 데이터가 다르면 업데이트 (성능 최적화: 같으면 렌더링 안 함)
-          if (JSON.stringify(cloudNotes) !== JSON.stringify(currentLocalNotes)) {
-            renderList(cloudNotes);
-          }
-        }
-        // GitHub 동기화 시작 (폴링)
-        startGitHubSync();
-      }).catch((error) => {
-        console.error('GitHub 동기화 오류:', error);
-        showToast('동기화 오류: ' + error.message);
-        // 에러 발생 시에도 로컬 데이터는 이미 표시되었으므로 추가 작업 불필요
-      });
-    }
     
     // Firebase 동기화 초기화 (새로고침 시 Firebase에서 데이터 가져오기)
     function initFirebaseSync() {
       if (!isFirebaseEnabled()) {
         console.warn('Firebase 동기화가 활성화되지 않았습니다.');
-        return;
+            return;
       }
       
       console.log('initFirebaseSync 시작', {
@@ -3715,12 +3313,12 @@
       
       // 새로고침 시 Firebase에서 데이터 가져오기 (비교 없이)
       syncFromFirebase().then(cloudNotes => {
-        if (cloudNotes && cloudNotes.length > 0) {
+          if (cloudNotes && cloudNotes.length > 0) {
           // Firebase에서 가져온 데이터로 로컬 업데이트 (비교 없음)
           localStorage.setItem(STORAGE_KEY, JSON.stringify(cloudNotes));
-          renderList(cloudNotes);
+              renderList(cloudNotes);
           console.log('✅ Firebase에서 데이터 가져옴:', cloudNotes.length, '개 메모');
-        } else {
+      } else {
           // Firebase에 데이터가 없으면 로컬 데이터를 Firebase에 저장
           const localNotes = loadNotes();
           if (localNotes && localNotes.length > 0) {
@@ -3730,7 +3328,7 @@
           }
           console.log('Firebase에 데이터 없음, 로컬 데이터 유지');
         }
-      }).catch((error) => {
+        }).catch((error) => {
         console.error('Firebase 동기화 오류:', error);
         // 에러가 발생해도 로컬 데이터는 이미 표시되었으므로 계속 사용
       });

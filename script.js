@@ -1138,7 +1138,7 @@
       folderText.textContent = '폴더 추가';
       const folderArrow = document.createElement('span');
       folderArrow.className = 'folder-add-arrow';
-      folderArrow.textContent = '>';
+      folderArrow.textContent = ' >';
       folderBtn.appendChild(folderText);
       folderBtn.appendChild(folderArrow);
       
@@ -1155,6 +1155,10 @@
         noteContextMenuSubmenu = document.createElement('div');
         noteContextMenuSubmenu.className = 'note-context-menu-submenu';
         const folders = loadFolders();
+        
+        // 디버깅: 폴더 목록 확인
+        console.log('폴더 목록:', folders);
+        
         folders.forEach(folder => {
           // 사진 폴더는 제외 (자동으로 추가되므로)
           if (folder.id === PHOTO_FOLDER_ID) return;
@@ -1163,7 +1167,8 @@
           folderItem.type = 'button';
           folderItem.className = 'note-context-menu-submenu-item';
           folderItem.textContent = folder.name || '폴더';
-          folderItem.addEventListener('click', function() {
+          folderItem.addEventListener('click', function(e) {
+            e.stopPropagation();
             const notes = loadNotes();
             const currentNote = notes.find(n => n.id === note.id);
             if (currentNote) {
@@ -1180,6 +1185,8 @@
           });
           noteContextMenuSubmenu.appendChild(folderItem);
         });
+        
+        console.log('서브메뉴 항목 수:', noteContextMenuSubmenu.children.length);
         
         // PC 버전을 위한 마우스 이벤트 리스너 추가
         if (!isMobileDevice) {
@@ -1199,6 +1206,8 @@
         let submenuVisible = false;
         folderBtn.addEventListener('click', function(e) {
           e.stopPropagation();
+          e.preventDefault();
+          
           if (submenuVisible) {
             if (noteContextMenuSubmenu) {
               noteContextMenuSubmenu.style.display = 'none';
@@ -1207,27 +1216,69 @@
           } else {
             // 서브메뉴를 최신 폴더 목록으로 새로 생성
             const submenu = createSubmenu();
+            
+            // 모바일에서 서브메뉴 위치 조정 (화면 밖으로 나가지 않도록)
             const rect = folderBtn.getBoundingClientRect();
-            submenu.style.left = (rect.right + 4) + 'px';
-            submenu.style.top = rect.top + 'px';
+            const menuRect = noteContextMenu ? noteContextMenu.getBoundingClientRect() : rect;
+            const submenuWidth = 200; // 대략적인 서브메뉴 너비
+            const submenuHeight = Math.min(300, submenu.scrollHeight || 300);
+            
+            let left = menuRect.right + 4;
+            let top = rect.top;
+            
+            // 화면 오른쪽 경계 확인
+            if (left + submenuWidth > window.innerWidth) {
+              // 메뉴 왼쪽에 표시
+              left = menuRect.left - submenuWidth - 4;
+              if (left < 10) {
+                // 여전히 화면 밖이면 메뉴 아래에 표시
+                left = menuRect.left;
+                top = menuRect.bottom + 4;
+              }
+            }
+            
+            // 화면 아래쪽 경계 확인
+            if (top + submenuHeight > window.innerHeight) {
+              top = window.innerHeight - submenuHeight - 10;
+            }
+            
+            // 화면 위쪽 경계 확인
+            if (top < 10) {
+              top = 10;
+            }
+            
+            submenu.style.left = left + 'px';
+            submenu.style.top = top + 'px';
             submenu.style.display = 'flex';
+            submenu.style.position = 'fixed';
+            submenu.style.zIndex = '10000002';
+            
             document.body.appendChild(submenu);
             submenuVisible = true;
+            
+            console.log('서브메뉴 표시:', {
+              left: submenu.style.left,
+              top: submenu.style.top,
+              display: submenu.style.display,
+              items: submenu.children.length
+            });
             
             // 서브메뉴 외부 클릭 시 닫기
             setTimeout(() => {
               const closeSubmenu = function(e) {
-                if (noteContextMenuSubmenu && !noteContextMenuSubmenu.contains(e.target) && 
-                    !folderBtn.contains(e.target)) {
+                if (noteContextMenuSubmenu && 
+                    !noteContextMenuSubmenu.contains(e.target) && 
+                    !folderBtn.contains(e.target) &&
+                    (!noteContextMenu || !noteContextMenu.contains(e.target))) {
                   noteContextMenuSubmenu.style.display = 'none';
                   submenuVisible = false;
                   document.removeEventListener('click', closeSubmenu);
                   document.removeEventListener('touchend', closeSubmenu);
                 }
               };
-              document.addEventListener('click', closeSubmenu);
-              document.addEventListener('touchend', closeSubmenu);
-            }, 0);
+              document.addEventListener('click', closeSubmenu, true);
+              document.addEventListener('touchend', closeSubmenu, true);
+            }, 100);
           }
         });
       } else {

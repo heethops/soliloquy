@@ -1082,52 +1082,124 @@
 
         const img = new Image();
         img.onload = function() {
-          // 여러 크기의 ICO 생성 (16x16, 32x32, 48x48)
-          const sizes = [16, 32, 48];
+          // 원본 이미지 크기 확인
+          const originalWidth = img.width;
+          const originalHeight = img.height;
+          const maxDimension = Math.max(originalWidth, originalHeight);
+          
+          // 최고 화질을 위한 모든 표준 ICO 크기 포함
+          // 원본보다 작은 크기는 생성하고, 원본 크기도 포함 (최대 256px)
+          const allSizes = [16, 24, 32, 48, 64, 96, 128, 256];
+          
+          // 원본 이미지가 매우 큰 경우, 256px 이상도 포함 (비표준이지만 고화질)
+          const customSizes = [];
+          if (maxDimension > 256) {
+            // 원본 크기를 최대한 활용하되, 512, 1024 등 큰 크기도 포함
+            if (maxDimension >= 512) customSizes.push(512);
+            if (maxDimension >= 1024) customSizes.push(1024);
+            // 원본 크기 그대로 (최대 2048px로 제한)
+            const cappedSize = Math.min(maxDimension, 2048);
+            if (cappedSize > 256 && !customSizes.includes(cappedSize)) {
+              customSizes.push(cappedSize);
+            }
+          }
+          
+          const sizes = [...allSizes, ...customSizes].sort((a, b) => a - b);
           const iconEntries = [];
 
           sizes.forEach(size => {
             const canvas = document.createElement('canvas');
-            canvas.width = size;
-            canvas.height = size;
+            
+            // 최고 해상도를 위해 devicePixelRatio 고려
+            const dpr = window.devicePixelRatio || 1;
+            const actualSize = size * Math.min(dpr, 2); // 최대 2x까지만
+            
+            canvas.width = actualSize;
+            canvas.height = actualSize;
             const ctx = canvas.getContext('2d');
-            ctx.drawImage(img, 0, 0, size, size);
             
-            // PNG로 변환
-            const pngData = canvas.toDataURL('image/png');
-            // Base64 디코드
-            const base64Data = pngData.split(',')[1];
-            const binaryString = atob(base64Data);
-            const bytes = new Uint8Array(binaryString.length);
-            for (let i = 0; i < binaryString.length; i++) {
-              bytes[i] = binaryString.charCodeAt(i);
-            }
+            // 최고 품질 렌더링 설정
+            ctx.imageSmoothingEnabled = true;
+            ctx.imageSmoothingQuality = 'high';
             
-            iconEntries.push({
-              width: size,
-              height: size,
-              data: bytes
-            });
+            // 고해상도 캔버스에 그리기
+            ctx.drawImage(img, 0, 0, actualSize, actualSize);
+            
+            // 고품질 PNG로 변환
+            // toBlob을 사용하여 더 나은 품질 (지원되는 경우)
+            canvas.toBlob(function(blob) {
+              if (blob) {
+                const reader = new FileReader();
+                reader.onload = function(e) {
+                  const arrayBuffer = e.target.result;
+                  const bytes = new Uint8Array(arrayBuffer);
+                  
+                  iconEntries.push({
+                    width: size,
+                    height: size,
+                    data: bytes
+                  });
+                  
+                  // 모든 크기 생성 완료 후 ICO 파일 생성
+                  if (iconEntries.length === sizes.length) {
+                    createAndDownloadICO(iconEntries, silent);
+                  }
+                };
+                reader.readAsArrayBuffer(blob);
+              } else {
+                // toBlob 실패 시 toDataURL 사용
+                const pngData = canvas.toDataURL('image/png', 1.0);
+                const base64Data = pngData.split(',')[1];
+                const binaryString = atob(base64Data);
+                const bytes = new Uint8Array(binaryString.length);
+                for (let i = 0; i < binaryString.length; i++) {
+                  bytes[i] = binaryString.charCodeAt(i);
+                }
+                
+                iconEntries.push({
+                  width: size,
+                  height: size,
+                  data: bytes
+                });
+                
+                if (iconEntries.length === sizes.length) {
+                  createAndDownloadICO(iconEntries, silent);
+                }
+              }
+            }, 'image/png', 1.0);
           });
-
-          // ICO 파일 생성
-          const icoFile = createICOFile(iconEntries);
           
-          // 다운로드
-          const blob = new Blob([icoFile], { type: 'image/x-icon' });
-          const url = URL.createObjectURL(blob);
-          const a = document.createElement('a');
-          a.href = url;
-          a.download = 'favicon.ico';
-          document.body.appendChild(a);
-          a.click();
-          document.body.removeChild(a);
-          URL.revokeObjectURL(url);
-          
-          if (!silent) {
-            showToast('ICO 파일이 다운로드되었습니다.');
-          }
+          // 동기 처리를 위한 폴백 (toBlob이 비동기이므로)
+          // 모든 크기가 비동기로 처리되므로, 별도 함수로 분리
         };
+        
+        function createAndDownloadICO(iconEntries, silent) {
+          try {
+            // ICO 파일 생성
+            const icoFile = createICOFile(iconEntries);
+            
+            // 다운로드
+            const blob = new Blob([icoFile], { type: 'image/x-icon' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = 'favicon.ico';
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+            
+            if (!silent) {
+              showToast('고화질 ICO 파일이 다운로드되었습니다.');
+            }
+          } catch (error) {
+            console.error('ICO 파일 생성 실패:', error);
+            if (!silent) {
+              showToast('ICO 파일 생성에 실패했습니다.');
+            }
+          }
+        }
+        
         img.onerror = function() {
           if (!silent) {
             showToast('이미지를 변환할 수 없습니다.');
@@ -1166,9 +1238,13 @@
         const dirEntry = new ArrayBuffer(16);
         const dirView = new DataView(dirEntry);
         
-        // Width/Height (1 byte each, 0 = 256)
-        dirView.setUint8(0, entry.width === 256 ? 0 : entry.width);
-        dirView.setUint8(1, entry.height === 256 ? 0 : entry.height);
+        // Width/Height (1 byte each, 0 = 256, but for sizes > 256, use 0)
+        // ICO 형식에서는 256 이상의 크기는 0으로 표시 (실제 크기는 PNG 헤더에 포함)
+        const width = entry.width >= 256 ? 0 : entry.width;
+        const height = entry.height >= 256 ? 0 : entry.height;
+        
+        dirView.setUint8(0, width);
+        dirView.setUint8(1, height);
         dirView.setUint8(2, 0); // Color palette (0 = no palette)
         dirView.setUint8(3, 0); // Reserved
         dirView.setUint16(4, 1, true); // Color planes (0 or 1)

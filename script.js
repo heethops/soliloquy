@@ -3519,64 +3519,89 @@
       syncFromFirebase().then(cloudNotes => {
         const currentLocalNotes = loadNotes();
         
-        // 로컬 데이터를 절대적으로 우선 보존 (모바일에서 새로 작성한 글이 사라지지 않도록)
-        if (currentLocalNotes && currentLocalNotes.length > 0) {
-          // 로컬 데이터가 있으면 항상 로컬 데이터를 우선 사용
-          // Firebase에서 데이터를 가져왔을 때
-          if (cloudNotes && cloudNotes.length > 0) {
-            // 로컬 데이터와 Firebase 데이터 병합 (로컬 절대 우선)
-            const localNotesMap = new Map(currentLocalNotes.map(n => [n.id, n]));
-            const cloudNotesMap = new Map(cloudNotes.map(n => [n.id, n]));
+        const localCount = currentLocalNotes ? currentLocalNotes.length : 0;
+        const cloudCount = cloudNotes ? cloudNotes.length : 0;
+        
+        console.log('데이터 비교:', {
+          local: localCount,
+          cloud: cloudCount,
+          more: localCount > cloudCount ? 'local' : 'cloud'
+        });
+        
+        // 총 메모 수가 더 많은 쪽을 선택
+        let selectedNotes = null;
+        let source = '';
+        
+        if (localCount > cloudCount) {
+          // 로컬이 더 많으면 로컬 사용
+          selectedNotes = currentLocalNotes;
+          source = 'local';
+          console.log('✅ 로컬 데이터 선택 (더 많은 메모:', localCount, '개)');
+        } else if (cloudCount > localCount) {
+          // Firebase가 더 많으면 Firebase 사용
+          selectedNotes = cloudNotes;
+          source = 'cloud';
+          console.log('✅ Firebase 데이터 선택 (더 많은 메모:', cloudCount, '개)');
+        } else if (localCount === cloudCount && localCount > 0) {
+          // 개수가 같으면 병합 (최신 것 우선)
+          const localNotesMap = new Map(currentLocalNotes.map(n => [n.id, n]));
+          const cloudNotesMap = new Map(cloudNotes.map(n => [n.id, n]));
+          
+          const allNoteIds = new Set([...localNotesMap.keys(), ...cloudNotesMap.keys()]);
+          const mergedNotes = [];
+          
+          for (const id of allNoteIds) {
+            const localNote = localNotesMap.get(id);
+            const cloudNote = cloudNotesMap.get(id);
             
-            // 모든 노트 ID 수집
-            const allNoteIds = new Set([...localNotesMap.keys(), ...cloudNotesMap.keys()]);
-            const mergedNotes = [];
-            
-            for (const id of allNoteIds) {
-              const localNote = localNotesMap.get(id);
-              const cloudNote = cloudNotesMap.get(id);
-              
-              if (localNote && cloudNote) {
-                // 둘 다 있으면 항상 로컬 사용 (로컬 절대 우선 정책)
-                mergedNotes.push(localNote);
-              } else if (localNote) {
-                // 로컬에만 있으면 로컬 사용
-                mergedNotes.push(localNote);
-              } else if (cloudNote) {
-                // Firebase에만 있으면 Firebase 사용 (다른 기기에서 작성한 글)
-                mergedNotes.push(cloudNote);
-              }
+            if (localNote && cloudNote) {
+              // 둘 다 있으면 더 최신 것 사용
+              const localTime = new Date(localNote.createdAt).getTime();
+              const cloudTime = new Date(cloudNote.createdAt).getTime();
+              mergedNotes.push(localTime >= cloudTime ? localNote : cloudNote);
+            } else if (localNote) {
+              mergedNotes.push(localNote);
+            } else if (cloudNote) {
+              mergedNotes.push(cloudNote);
             }
-            
-            // createdAt 기준으로 정렬
-            mergedNotes.sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
-            
-            // 병합된 데이터가 로컬과 다르면 업데이트
-            if (JSON.stringify(mergedNotes) !== JSON.stringify(currentLocalNotes)) {
-              localStorage.setItem(STORAGE_KEY, JSON.stringify(mergedNotes));
-              renderList(mergedNotes);
-              // 병합된 데이터를 Firebase에 저장
-              syncToFirebase(mergedNotes).catch(err => {
-                console.error('병합된 데이터를 Firebase에 저장 실패:', err);
-              });
-              console.log('로컬과 Firebase 데이터를 병합했습니다. (로컬 우선)');
-            } else {
-              // 데이터가 같으면 로컬 데이터 유지 (이미 표시됨)
-              console.log('로컬과 Firebase 데이터가 동일합니다.');
-            }
-          } else {
-            // Firebase에 데이터가 없으면 로컬 데이터를 Firebase에 저장
-            syncToFirebase(currentLocalNotes).catch(err => {
-              console.error('로컬 데이터를 Firebase에 저장 실패:', err);
-            });
           }
+          
+          mergedNotes.sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
+          selectedNotes = mergedNotes;
+          source = 'merged';
+          console.log('✅ 데이터 병합 (개수 동일:', localCount, '개)');
         } else {
-          // 로컬 데이터가 없고 Firebase에만 있으면 Firebase 데이터 사용
-          if (cloudNotes && cloudNotes.length > 0) {
-            localStorage.setItem(STORAGE_KEY, JSON.stringify(cloudNotes));
-            renderList(cloudNotes);
-            console.log('Firebase에서 데이터를 가져왔습니다.');
+          // 둘 다 비어있음
+          console.log('로컬과 Firebase 모두 비어있습니다.');
+          return;
+        }
+        
+        // 선택한 데이터로 업데이트
+        if (selectedNotes && selectedNotes.length > 0) {
+          const currentDataStr = JSON.stringify(currentLocalNotes);
+          const selectedDataStr = JSON.stringify(selectedNotes);
+          
+          if (currentDataStr !== selectedDataStr) {
+            localStorage.setItem(STORAGE_KEY, JSON.stringify(selectedNotes));
+            renderList(selectedNotes);
+            
+            // 선택한 데이터를 Firebase에 저장 (동기화)
+            syncToFirebase(selectedNotes).catch(err => {
+              console.error('선택한 데이터를 Firebase에 저장 실패:', err);
+            });
+            
+            console.log('데이터 업데이트 완료:', {
+              source: source,
+              count: selectedNotes.length
+            });
+          } else {
+            console.log('데이터가 이미 동일합니다.');
           }
+        } else if (currentLocalNotes && currentLocalNotes.length > 0) {
+          // 로컬에만 데이터가 있으면 Firebase에 저장
+          syncToFirebase(currentLocalNotes).catch(err => {
+            console.error('로컬 데이터를 Firebase에 저장 실패:', err);
+          });
         }
         // 정기 동기화 제거 - 변경 이벤트 발생 시에만 동기화
       }).catch((error) => {

@@ -3847,6 +3847,7 @@
           const icon = document.createElement('img');
           icon.src = folder.id === BOOKMARK_FOLDER_ID ? 'bookmark-icon.svg' : 
                      folder.id === PHOTO_FOLDER_ID ? 'photo-icon.svg' : 
+                     folder.id === HIDDEN_FOLDER_ID ? 'lock-icon.svg' : 
                      'folder-icon.svg';
           icon.alt = folder.id === BOOKMARK_FOLDER_ID ? '북마크' : 
                      folder.id === PHOTO_FOLDER_ID ? '사진' : 

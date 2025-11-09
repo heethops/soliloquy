@@ -9,6 +9,7 @@
   const BACKUP_KEY = 'backup_data_v1';
   const BOOKMARK_FOLDER_ID = '__bookmark_folder__';
   const PHOTO_FOLDER_ID = '__photo_folder__';
+  const HIDDEN_FOLDER_ID = '__hidden_folder__';
 
   /**
    * @typedef {{ id: string; text: string; createdAt: string; images?: string[]; imageData?: string; folderIds?: string[]; parentId?: string }} Note
@@ -750,6 +751,15 @@
           });
           saveFolders(folders, true); // skipSync = true (무한 재귀 방지)
         }
+        // 숨김 폴더가 없으면 생성
+        const hiddenFolder = folders.find(f => f.id === HIDDEN_FOLDER_ID);
+        if (!hiddenFolder) {
+          folders.push({
+            id: HIDDEN_FOLDER_ID,
+            name: '숨김'
+          });
+          saveFolders(folders, true); // skipSync = true (무한 재귀 방지)
+        }
         // 북마크 폴더를 가장 위로 정렬
         const bookmark = folders.find(f => f.id === BOOKMARK_FOLDER_ID);
         if (bookmark) {
@@ -772,6 +782,28 @@
           folders.splice(bookmarkIndex + 1, 0, photo);
           saveFolders(folders, true); // skipSync = true (무한 재귀 방지)
         }
+        // 숨김 폴더를 사진 폴더 다음으로 정렬
+        const hidden = folders.find(f => f.id === HIDDEN_FOLDER_ID);
+        if (hidden) {
+          folders = folders.filter(f => f.id !== HIDDEN_FOLDER_ID);
+          if (!hidden.name || hidden.name.trim() === '') {
+            hidden.name = '숨김';
+          }
+          // 사진 폴더 다음에 삽입
+          const photoIndex = folders.findIndex(f => f.id === PHOTO_FOLDER_ID);
+          if (photoIndex !== -1) {
+            folders.splice(photoIndex + 1, 0, hidden);
+          } else {
+            // 사진 폴더가 없으면 북마크 다음에 삽입
+            const bookmarkIndex = folders.findIndex(f => f.id === BOOKMARK_FOLDER_ID);
+            if (bookmarkIndex !== -1) {
+              folders.splice(bookmarkIndex + 1, 0, hidden);
+            } else {
+              folders.push(hidden);
+            }
+          }
+          saveFolders(folders, true); // skipSync = true (무한 재귀 방지)
+        }
         return folders;
       } catch {
         // 에러 시에도 기본 폴더는 생성
@@ -783,8 +815,12 @@
           id: PHOTO_FOLDER_ID,
           name: '사진'
         };
-        saveFolders([bookmarkFolder, photoFolder], true); // skipSync = true (무한 재귀 방지)
-        return [bookmarkFolder, photoFolder];
+        const hiddenFolder = {
+          id: HIDDEN_FOLDER_ID,
+          name: '숨김'
+        };
+        saveFolders([bookmarkFolder, photoFolder, hiddenFolder], true); // skipSync = true (무한 재귀 방지)
+        return [bookmarkFolder, photoFolder, hiddenFolder];
       }
     }
 
@@ -2158,12 +2194,31 @@
             });
           }
           
+          // 숨김 폴더 필터 적용: 기본적으로 숨김 폴더에 속한 메모는 제외
+          const hasHiddenFolder = selectedFolderIds.has(HIDDEN_FOLDER_ID);
+          if (!hasHiddenFolder) {
+            filtered = filtered.filter(n => {
+              if (!n.folderIds || n.folderIds.length === 0) {
+                return true;
+              }
+              return !n.folderIds.includes(HIDDEN_FOLDER_ID);
+            });
+          }
+          
           // 폴더 필터 적용
           if (selectedFolderIds.size > 0) {
             const hasPhotoFolder = selectedFolderIds.has(PHOTO_FOLDER_ID);
-            const otherFolders = Array.from(selectedFolderIds).filter(id => id !== PHOTO_FOLDER_ID);
+            const hasHiddenFolderSelected = selectedFolderIds.has(HIDDEN_FOLDER_ID);
+            const otherFolders = Array.from(selectedFolderIds).filter(id => 
+              id !== PHOTO_FOLDER_ID && id !== HIDDEN_FOLDER_ID
+            );
             
-            if (hasPhotoFolder && otherFolders.length === 0) {
+            // 숨김 폴더만 선택된 경우
+            if (hasHiddenFolderSelected && !hasPhotoFolder && otherFolders.length === 0) {
+              filtered = filtered.filter(n => {
+                return n.folderIds && n.folderIds.includes(HIDDEN_FOLDER_ID);
+              });
+            } else if (hasPhotoFolder && otherFolders.length === 0 && !hasHiddenFolderSelected) {
               filtered = filtered.filter(n => {
                 const hasImages = (n.images && n.images.length > 0) || n.imageData;
                 return hasImages;
@@ -2184,6 +2239,14 @@
                 if (hasPhotoFolder) {
                   const hasImages = (n.images && n.images.length > 0) || n.imageData;
                   if (hasImages) {
+                    matchingNotes.add(n.id);
+                    if (n.parentId) matchingNotes.add(n.parentId);
+                    const children = allChildNotesMap.get(n.id) || [];
+                    children.forEach(child => matchingNotes.add(child.id));
+                  }
+                }
+                if (hasHiddenFolderSelected) {
+                  if (n.folderIds && n.folderIds.includes(HIDDEN_FOLDER_ID)) {
                     matchingNotes.add(n.id);
                     if (n.parentId) matchingNotes.add(n.parentId);
                     const children = allChildNotesMap.get(n.id) || [];
@@ -2322,11 +2385,29 @@
             });
           }
           
+          // 숨김 폴더 필터 적용
+          const hasHiddenFolder = selectedFolderIds.has(HIDDEN_FOLDER_ID);
+          if (!hasHiddenFolder) {
+            filtered = filtered.filter(n => {
+              if (!n.folderIds || n.folderIds.length === 0) {
+                return true;
+              }
+              return !n.folderIds.includes(HIDDEN_FOLDER_ID);
+            });
+          }
+          
           if (selectedFolderIds.size > 0) {
             const hasPhotoFolder = selectedFolderIds.has(PHOTO_FOLDER_ID);
-            const otherFolders = Array.from(selectedFolderIds).filter(id => id !== PHOTO_FOLDER_ID);
+            const hasHiddenFolderSelected = selectedFolderIds.has(HIDDEN_FOLDER_ID);
+            const otherFolders = Array.from(selectedFolderIds).filter(id => 
+              id !== PHOTO_FOLDER_ID && id !== HIDDEN_FOLDER_ID
+            );
             
-            if (hasPhotoFolder && otherFolders.length === 0) {
+            if (hasHiddenFolderSelected && !hasPhotoFolder && otherFolders.length === 0) {
+              filtered = filtered.filter(n => {
+                return n.folderIds && n.folderIds.includes(HIDDEN_FOLDER_ID);
+              });
+            } else if (hasPhotoFolder && otherFolders.length === 0 && !hasHiddenFolderSelected) {
               filtered = filtered.filter(n => {
                 const hasImages = (n.images && n.images.length > 0) || n.imageData;
                 return hasImages;
@@ -2347,6 +2428,14 @@
                 if (hasPhotoFolder) {
                   const hasImages = (n.images && n.images.length > 0) || n.imageData;
                   if (hasImages) {
+                    matchingNotes.add(n.id);
+                    if (n.parentId) matchingNotes.add(n.parentId);
+                    const children = allChildNotesMap.get(n.id) || [];
+                    children.forEach(child => matchingNotes.add(child.id));
+                  }
+                }
+                if (hasHiddenFolderSelected) {
+                  if (n.folderIds && n.folderIds.includes(HIDDEN_FOLDER_ID)) {
                     matchingNotes.add(n.id);
                     if (n.parentId) matchingNotes.add(n.parentId);
                     const children = allChildNotesMap.get(n.id) || [];
@@ -2649,20 +2738,45 @@
         });
       }
       
+      // 숨김 폴더 필터 적용: 기본적으로 숨김 폴더에 속한 메모는 제외
+      // 단, 숨김 폴더가 선택되었을 때만 표시
+      const hasHiddenFolder = selectedFolderIds.has(HIDDEN_FOLDER_ID);
+      if (!hasHiddenFolder) {
+        // 숨김 폴더가 선택되지 않았으면 숨김 폴더에 속한 메모 제외
+        filtered = filtered.filter(n => {
+          // folderIds가 없거나 숨김 폴더 ID를 포함하지 않으면 표시
+          if (!n.folderIds || n.folderIds.length === 0) {
+            return true;
+          }
+          return !n.folderIds.includes(HIDDEN_FOLDER_ID);
+        });
+      }
+      
       // 폴더 필터 적용 - 타래 구조 유지를 위해 부모/자식 중 하나라도 폴더에 있으면 전체 포함
       if (selectedFolderIds.size > 0) {
         // 사진 폴더가 선택되었는지 확인
         const hasPhotoFolder = selectedFolderIds.has(PHOTO_FOLDER_ID);
-        const otherFolders = Array.from(selectedFolderIds).filter(id => id !== PHOTO_FOLDER_ID);
+        // 숨김 폴더가 선택되었는지 확인
+        const hasHiddenFolderSelected = selectedFolderIds.has(HIDDEN_FOLDER_ID);
+        // 사진 폴더와 숨김 폴더를 제외한 다른 폴더들
+        const otherFolders = Array.from(selectedFolderIds).filter(id => 
+          id !== PHOTO_FOLDER_ID && id !== HIDDEN_FOLDER_ID
+        );
         
-        if (hasPhotoFolder && otherFolders.length === 0) {
+        // 숨김 폴더만 선택된 경우
+        if (hasHiddenFolderSelected && !hasPhotoFolder && otherFolders.length === 0) {
+          // 숨김 폴더에 속한 메모만 표시
+          filtered = filtered.filter(n => {
+            return n.folderIds && n.folderIds.includes(HIDDEN_FOLDER_ID);
+          });
+        } else if (hasPhotoFolder && otherFolders.length === 0 && !hasHiddenFolderSelected) {
           // 사진 폴더만 선택: 사진이 있는 글만 표시
           filtered = filtered.filter(n => {
             const hasImages = (n.images && n.images.length > 0) || n.imageData;
             return hasImages;
           });
         } else {
-          // 일반 폴더 선택 (사진 폴더 포함 가능): 타래 구조를 유지하면서 필터링
+          // 일반 폴더 선택 (사진 폴더, 숨김 폴더 포함 가능): 타래 구조를 유지하면서 필터링
           // 먼저 타래 구조 정리 (필터 전)
           const allParentNotes = filtered.filter(n => !n.parentId);
           const allChildNotesMap = new Map();
@@ -2690,6 +2804,19 @@
               // 자식 글들도 포함
               const children = allChildNotesMap.get(n.id) || [];
               children.forEach(child => matchingNotes.add(child.id));
+              }
+            }
+            // 숨김 폴더가 선택되었고 숨김 폴더에 속해 있으면 포함
+            if (hasHiddenFolderSelected) {
+              if (n.folderIds && n.folderIds.includes(HIDDEN_FOLDER_ID)) {
+                matchingNotes.add(n.id);
+                // 부모 글도 포함
+                if (n.parentId) {
+                  matchingNotes.add(n.parentId);
+                }
+                // 자식 글들도 포함
+                const children = allChildNotesMap.get(n.id) || [];
+                children.forEach(child => matchingNotes.add(child.id));
               }
             }
             // 다른 폴더들 확인
@@ -3565,10 +3692,22 @@
 
     // 폴더 관련 함수들
     function renderFolders() {
-      if (!folderList) return;
+      if (!folderList) {
+        console.error('folderList가 없습니다!');
+        return;
+      }
       folderList.innerHTML = '';
       const folders = loadFolders();
+      console.log('renderFolders: 폴더 개수 =', folders.length, folders);
+      if (!folders || folders.length === 0) {
+        console.warn('폴더가 없습니다!');
+        return;
+      }
       folders.forEach(folder => {
+        if (!folder || !folder.id) {
+          console.warn('잘못된 폴더:', folder);
+          return;
+        }
         const folderItem = document.createElement('div');
         folderItem.className = 'folder-item';
         folderItem.setAttribute('data-folder-id', folder.id);
@@ -3595,17 +3734,19 @@
                   saveFolders(folders);
                 }
               } else {
-                // 빈 값이면 폴더 삭제 (북마크 폴더와 사진 폴더 제외)
-                if (f && f.id !== BOOKMARK_FOLDER_ID && f.id !== PHOTO_FOLDER_ID) {
+                // 빈 값이면 폴더 삭제 (북마크 폴더, 사진 폴더, 숨김 폴더 제외)
+                if (f && f.id !== BOOKMARK_FOLDER_ID && f.id !== PHOTO_FOLDER_ID && f.id !== HIDDEN_FOLDER_ID) {
                   const filtered = folders.filter(x => x.id !== folder.id);
                   saveFolders(filtered);
                   selectedFolderIds.delete(folder.id);
-                } else if (f && (f.id === BOOKMARK_FOLDER_ID || f.id === PHOTO_FOLDER_ID)) {
-                  // 북마크 폴더와 사진 폴더는 이름을 유지
+                } else if (f && (f.id === BOOKMARK_FOLDER_ID || f.id === PHOTO_FOLDER_ID || f.id === HIDDEN_FOLDER_ID)) {
+                  // 북마크 폴더, 사진 폴더, 숨김 폴더는 이름을 유지
                   if (f.id === BOOKMARK_FOLDER_ID) {
                     f.name = '북마크';
                   } else if (f.id === PHOTO_FOLDER_ID) {
                     f.name = '사진';
+                  } else if (f.id === HIDDEN_FOLDER_ID) {
+                    f.name = '숨김';
                   }
                   saveFolders(folders);
                 }
@@ -3615,21 +3756,23 @@
               // 폴더 이름 변경 시 메모 목록은 다시 렌더링할 필요 없음 (성능 최적화)
               updateFilterInfo();
             } else if (e.key === 'Escape') {
-              // Escape 시 폴더 삭제 (빈 이름이면, 북마크 폴더와 사진 폴더 제외)
+              // Escape 시 폴더 삭제 (빈 이름이면, 북마크 폴더, 사진 폴더, 숨김 폴더 제외)
               const folders = loadFolders();
               const f = folders.find(x => x.id === folder.id);
-              if (f && !f.name && f.id !== BOOKMARK_FOLDER_ID && f.id !== PHOTO_FOLDER_ID) {
+              if (f && !f.name && f.id !== BOOKMARK_FOLDER_ID && f.id !== PHOTO_FOLDER_ID && f.id !== HIDDEN_FOLDER_ID) {
                 const filtered = folders.filter(x => x.id !== folder.id);
                 saveFolders(filtered);
                 if (selectedFolderId === folder.id) {
                   selectedFolderId = null;
                 }
-              } else if (f && (f.id === BOOKMARK_FOLDER_ID || f.id === PHOTO_FOLDER_ID)) {
-                // 북마크 폴더와 사진 폴더는 이름을 유지
+              } else if (f && (f.id === BOOKMARK_FOLDER_ID || f.id === PHOTO_FOLDER_ID || f.id === HIDDEN_FOLDER_ID)) {
+                // 북마크 폴더, 사진 폴더, 숨김 폴더는 이름을 유지
                 if (f.id === BOOKMARK_FOLDER_ID) {
                   f.name = '북마크';
                 } else if (f.id === PHOTO_FOLDER_ID) {
                   f.name = '사진';
+                } else if (f.id === HIDDEN_FOLDER_ID) {
+                  f.name = '숨김';
                 }
                 saveFolders(folders);
               }
@@ -3661,9 +3804,9 @@
                 // 폴더 이름 변경 시 메모 목록은 다시 렌더링할 필요 없음 (성능 최적화)
                 updateFilterInfo();
               } else {
-                // 빈 값이면 폴더 삭제 (북마크 폴더와 사진 폴더 제외)
+                // 빈 값이면 폴더 삭제 (북마크 폴더, 사진 폴더, 숨김 폴더 제외)
                 // 단, 새로 추가한 폴더(원래 이름이 빈 문자열)는 삭제하지 않음
-                if (f && f.id !== BOOKMARK_FOLDER_ID && f.id !== PHOTO_FOLDER_ID) {
+                if (f && f.id !== BOOKMARK_FOLDER_ID && f.id !== PHOTO_FOLDER_ID && f.id !== HIDDEN_FOLDER_ID) {
                   // 원래 이름이 있었던 폴더만 삭제
                   if (folder.name && folder.name.trim() !== '') {
                     const filtered = folders.filter(x => x.id !== folder.id);
@@ -3680,12 +3823,14 @@
                 editingFolderId = null;
                 renderFolders();
               }
-                } else if (f && (f.id === BOOKMARK_FOLDER_ID || f.id === PHOTO_FOLDER_ID)) {
-                  // 북마크 폴더와 사진 폴더는 이름을 유지
+                } else if (f && (f.id === BOOKMARK_FOLDER_ID || f.id === PHOTO_FOLDER_ID || f.id === HIDDEN_FOLDER_ID)) {
+                  // 북마크 폴더, 사진 폴더, 숨김 폴더는 이름을 유지
                   if (f.id === BOOKMARK_FOLDER_ID) {
                     f.name = '북마크';
                   } else if (f.id === PHOTO_FOLDER_ID) {
                     f.name = '사진';
+                  } else if (f.id === HIDDEN_FOLDER_ID) {
+                    f.name = '숨김';
                   }
                 saveFolders(folders);
                 editingFolderId = null;
@@ -3705,6 +3850,7 @@
                      'folder-icon.svg';
           icon.alt = folder.id === BOOKMARK_FOLDER_ID ? '북마크' : 
                      folder.id === PHOTO_FOLDER_ID ? '사진' : 
+                     folder.id === HIDDEN_FOLDER_ID ? '숨김' : 
                      '폴더';
           icon.className = 'folder-icon';
           folderItem.appendChild(icon);
@@ -3837,7 +3983,7 @@
         if (selectedFolderIds.size > 0) {
           const folders = loadFolders();
           const deletableIds = Array.from(selectedFolderIds).filter(id => 
-            id !== BOOKMARK_FOLDER_ID && id !== PHOTO_FOLDER_ID
+            id !== BOOKMARK_FOLDER_ID && id !== PHOTO_FOLDER_ID && id !== HIDDEN_FOLDER_ID
           );
           
           if (deletableIds.length === 0) {

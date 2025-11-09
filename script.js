@@ -2838,14 +2838,19 @@
         }
       }
       
-      // 타래 구조 정리: 필터링 전 전체 노트에서 타래 구조 구성 (검색 필터용)
+      // 타래 구조 정리: 이미 필터링된 노트에서 타래 구조 구성 (검색 필터용)
+      // 숨김 폴더 필터가 이미 적용된 filtered를 사용
       const allChildNotesMap = new Map();
-      notes.forEach(n => {
+      filtered.forEach(n => {
         if (n.parentId) {
-          if (!allChildNotesMap.has(n.parentId)) {
-            allChildNotesMap.set(n.parentId, []);
+          // 부모가 현재 필터링된 결과에 있는지 확인
+          const parentExists = filtered.some(p => p.id === n.parentId);
+          if (parentExists) {
+            if (!allChildNotesMap.has(n.parentId)) {
+              allChildNotesMap.set(n.parentId, []);
+            }
+            allChildNotesMap.get(n.parentId).push(n);
           }
-          allChildNotesMap.get(n.parentId).push(n);
         }
       });
       
@@ -2856,26 +2861,50 @@
         filtered.forEach(n => {
           if ((n.text || '').toLowerCase().includes(q)) {
             matchingNotes.add(n.id);
-            // 부모 글도 포함
+            // 부모 글도 포함 (부모가 현재 filtered에 있는 경우만)
             if (n.parentId) {
-              matchingNotes.add(n.parentId);
+              const parentExists = filtered.some(p => p.id === n.parentId);
+              if (parentExists) {
+                matchingNotes.add(n.parentId);
+              }
             }
-            // 자식 글들도 포함
+            // 자식 글들도 포함 (자식이 현재 filtered에 있는 경우만)
             const children = allChildNotesMap.get(n.id) || [];
-            children.forEach(child => matchingNotes.add(child.id));
+            children.forEach(child => {
+              if (filtered.some(f => f.id === child.id)) {
+                matchingNotes.add(child.id);
+              }
+            });
           }
         });
         filtered = filtered.filter(n => matchingNotes.has(n.id));
       }
       
-      // 타래 구조 최종 정리 (필터 후) - 필터링된 노트만 사용하되, 필터링 전 타래 구조 참조
-      const finalParentNotes = filtered.filter(n => !n.parentId);
+      // 타래 구조 최종 정리 (필터 후) - 필터링된 노트만 사용
+      // 숨김 폴더 필터가 적용된 filtered만 사용하므로, 숨김 폴더 메모는 이미 제외됨
+      const finalParentNotes = filtered.filter(n => {
+        // 부모가 없는 메모만 부모로 포함
+        if (n.parentId) return false;
+        // 숨김 폴더가 선택되지 않았고, 메모가 숨김 폴더에 속하면 제외
+        if (!selectedFolderIds.has(HIDDEN_FOLDER_ID)) {
+          if (n.folderIds && n.folderIds.includes(HIDDEN_FOLDER_ID)) {
+            return false;
+          }
+        }
+        return true;
+      });
       const finalChildNotesMap = new Map();
       filtered.forEach(n => {
         if (n.parentId) {
           // 부모가 필터링된 결과에 있는지 확인
           const parentExists = filtered.some(p => p.id === n.parentId);
           if (parentExists) {
+            // 자식 메모도 숨김 폴더에 속하지 않았는지 다시 한 번 확인
+            if (!selectedFolderIds.has(HIDDEN_FOLDER_ID)) {
+              if (n.folderIds && n.folderIds.includes(HIDDEN_FOLDER_ID)) {
+                return; // 숨김 폴더 메모는 제외
+              }
+            }
             if (!finalChildNotesMap.has(n.parentId)) {
               finalChildNotesMap.set(n.parentId, []);
             }

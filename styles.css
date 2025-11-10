@@ -1346,24 +1346,22 @@ label.btn-icon {
   .notes-section {
     width: 100% !important;
     max-width: 100vw !important;
-    overflow: hidden !important;
+    overflow-x: hidden !important;
   }
   .composer {
     max-width: 100vw !important;
     width: 100% !important;
     box-sizing: border-box !important;
-    overflow: hidden !important;
-    padding-left: 8px !important;
-    padding-right: 8px !important;
+    overflow-x: hidden !important;
+    padding: 8px !important;
   }
   .input-container {
     max-width: 100% !important;
     width: 100% !important;
     box-sizing: border-box !important;
-    overflow: hidden !important;
+    overflow-x: hidden !important;
     min-width: 0 !important;
-    padding-left: 8px !important;
-    padding-right: 8px !important;
+    padding: 8px !important;
   }
   .thread-indicator {
     max-width: 100% !important;
@@ -1373,25 +1371,29 @@ label.btn-icon {
     min-width: 0 !important;
     display: flex !important;
     align-items: center !important;
-    padding-left: 8px !important;
-    padding-right: 8px !important;
+    gap: 8px !important;
+    padding: 6px 8px !important;
   }
   .thread-indicator-text {
     min-width: 0 !important;
-    max-width: calc(100% - 70px) !important;
-    width: 0 !important;
+    max-width: none !important;
+    width: auto !important;
     overflow: hidden !important;
     text-overflow: ellipsis !important;
     white-space: nowrap !important;
     word-break: break-all !important;
-    flex: 1 1 0% !important;
+    flex: 1 1 auto !important;
     display: block !important;
   }
   .thread-cancel-btn {
     flex-shrink: 0 !important;
     white-space: nowrap !important;
-    min-width: 50px !important;
-    max-width: 50px !important;
+    min-width: 45px !important;
+    max-width: 45px !important;
+    padding: 4px 6px !important;
+    pointer-events: auto !important;
+    z-index: 10 !important;
+    position: relative !important;
   }
   /* 모바일에서 답글 메모 텍스트가 화면 밖으로 나가지 않도록 */
   .note-wrapper.thread-reply .note-item {

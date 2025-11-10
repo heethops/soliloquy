@@ -111,7 +111,7 @@
           <div class="input-container">
             <textarea id="note-input" class="note-input" placeholder="여기에 글을 쓰세요..." rows="3"></textarea>
             <div id="upload-preview" class="upload-preview" style="display:none"></div>
-            <div id="thread-indicator" class="thread-indicator" style="display: none;">
+            <div id="thread-indicator" class="thread-indicator" style="display: none !important;">
               <span class="thread-indicator-text"></span>
               <button id="cancel-thread" class="thread-cancel-btn" type="button">취소</button>
             </div>
@@ -205,6 +205,19 @@
       <p>정말 초기화하시겠습니까?</p>
       <div class="reset-confirm-buttons">
         <button id="reset-confirm-yes" class="btn" type="button">네</button>
+        <button id="reset-confirm-no" class="btn btn-cancel" type="button">아니요</button>
+      </div>
+    </div>
+  </div>
+
+
+
+  <script src="script.js"></script>
+</body>
+</html>
+
+
+
         <button id="reset-confirm-no" class="btn btn-cancel" type="button">아니요</button>
       </div>
     </div>

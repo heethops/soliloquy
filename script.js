@@ -2003,15 +2003,7 @@
             if (threadIndicator) threadIndicator.style.display = 'none';
           }
         }
-        if (cancelThreadBtn) {
-          cancelThreadBtn.onclick = function() {
-            threadParentId = null;
-            selectedIds.clear();
-            updateThreadMode();
-            updateBulkState();
-            renderList(loadNotes());
-          };
-        }
+        // 취소 버튼 이벤트는 초기화 시 이미 등록됨
       } else {
         document.body.classList.remove('thread-mode');
         if (input) {
@@ -3332,6 +3324,30 @@
         updateThreadMode();
       }
     });
+    
+    // 취소 버튼 이벤트 리스너 (초기화 시 한 번만 등록)
+    const cancelThreadBtn = document.getElementById('cancel-thread');
+    if (cancelThreadBtn) {
+      cancelThreadBtn.addEventListener('click', function(e) {
+        e.preventDefault();
+        e.stopPropagation();
+        threadParentId = null;
+        selectedIds.clear();
+        updateThreadMode();
+        updateBulkState();
+        renderList(loadNotes());
+      });
+      // 모바일 터치 이벤트도 처리
+      cancelThreadBtn.addEventListener('touchend', function(e) {
+        e.preventDefault();
+        e.stopPropagation();
+        threadParentId = null;
+        selectedIds.clear();
+        updateThreadMode();
+        updateBulkState();
+        renderList(loadNotes());
+      });
+    }
     
     input.addEventListener('keydown', function (e) {
       // Alt+Enter: 강제 줄바꿈

@@ -129,7 +129,10 @@
 
         <section class="list" aria-labelledby="list-label">
           <h2 id="list-label" class="visually-hidden">저장된 글 목록</h2>
-          <div id="filter-info" class="filter-info"></div>
+          <div id="filter-info" class="filter-info">
+            <span class="filter-info-text"></span>
+            <button id="clear-filter" class="btn-clear-filter" type="button" style="display: none;">필터 해제</button>
+          </div>
           <ul id="notes" class="notes" aria-live="polite"></ul>
         </section>
       </div>
@@ -142,7 +145,6 @@
             <button id="next-month" class="btn-nav" type="button">›</button>
           </div>
           <div id="calendar" class="calendar"></div>
-          <button id="clear-filter" class="btn-clear-filter" type="button" style="display: none;">필터 해제</button>
         </div>
 
         <div class="search-bar">

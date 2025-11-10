@@ -12,7 +12,7 @@
   const HIDDEN_FOLDER_ID = '__hidden_folder__';
 
   /**
-   * @typedef {{ id: string; text: string; createdAt: string; images?: string[]; imageData?: string; folderIds?: string[]; parentId?: string }} Note
+   * @typedef {{ id: string; text: string; createdAt: string; images?: string[]; imageData?: string; folderIds?: string[]; parentId?: string; tags?: string[]; isPinned?: boolean }} Note
    * @typedef {{ id: string; name: string }} Folder
    */
 
@@ -128,6 +128,19 @@
     let folderMode = false; // 폴더 모드 상태
     let editingFolderId = null; // 편집 중인 폴더 ID
     let dateMode = false; // 날짜 모드 상태
+    let selectedTag = null; // 선택된 태그 (단일 선택)
+
+    // 해시태그 추출 함수
+    function extractHashtags(text) {
+      if (!text) return [];
+      // #으로 시작하고 공백이나 특수문자 전까지의 문자열을 태그로 인식
+      const hashtagRegex = /#([가-힣a-zA-Z0-9_]+)/g;
+      const matches = text.match(hashtagRegex);
+      if (!matches) return [];
+      // 중복 제거 및 # 제거
+      const tags = [...new Set(matches.map(tag => tag.substring(1).toLowerCase()))];
+      return tags;
+    }
 
     // hh:mm (기본) 또는 mm/dd hh:mm (날짜 모드일 때)
     function formatCompact(date) {
@@ -1579,6 +1592,24 @@
       });
       noteContextMenu.appendChild(replyBtn);
 
+      // 고정 버튼
+      const pinBtn = document.createElement('button');
+      pinBtn.type = 'button';
+      pinBtn.className = 'note-context-menu-item';
+      pinBtn.textContent = note.isPinned ? '고정 해제' : '고정';
+      pinBtn.addEventListener('click', function() {
+        const notes = loadNotes();
+        const currentNote = notes.find(n => n.id === note.id);
+        if (currentNote) {
+          currentNote.isPinned = !currentNote.isPinned;
+          saveNotes(notes);
+          renderList(notes);
+          showToast(currentNote.isPinned ? '메모가 고정되었습니다.' : '고정이 해제되었습니다.');
+        }
+        hideNoteContextMenu();
+      });
+      noteContextMenu.appendChild(pinBtn);
+
       // 폴더 추가 버튼
       const folderBtn = document.createElement('div');
       folderBtn.className = 'note-context-menu-item folder-add';
@@ -1805,40 +1836,115 @@
     // 텍스트 내 URL을 하이퍼링크로 변환
     function linkify(text) {
       const frag = document.createDocumentFragment();
+      // 해시태그와 URL을 모두 처리하기 위해 정규식을 결합
+      // 해시태그: #으로 시작하고 한글/영문/숫자/언더스코어로 구성
+      const hashtagRegex = /#([가-힣a-zA-Z0-9_]+)/g;
       // URL 패턴: http://, https://, www.로 시작하거나 도메인 패턴 (예: naver.com, example.co.kr)
-      // 도메인 패턴: 알파벳/숫자로 시작하고 최소 2글자 이상의 TLD를 가진 패턴
       const urlRegex = /(https?:\/\/[^\s<>"']+|www\.[^\s<>"']+|[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?\.(?:[a-zA-Z]{2,}(?:\.[a-zA-Z]{2,})*)(?:\/[^\s<>"']*)?)/gi;
-      let lastIndex = 0;
+      
+      // 모든 매치를 찾아서 위치 순으로 정렬
+      const matches = [];
+      
+      // 해시태그 매치 추가
       let match;
-      while ((match = urlRegex.exec(text)) !== null) {
-        const url = match[0];
-        const start = match.index;
-        // URL 뒤에 문장부호가 있는지 확인
-        const afterUrl = text.slice(start + url.length, start + url.length + 1);
-        const hasPunctuation = /[.,;:!?)]/.test(afterUrl);
-        
-        if (start > lastIndex) {
-          frag.appendChild(document.createTextNode(text.slice(lastIndex, start)));
-        }
-        const a = document.createElement('a');
-        let href = url;
-        // URL 끝의 문장부호 제거 (URL에 포함된 경우)
-        let cleanUrl = url.replace(/[.,;:!?)]+$/, '');
-        if (url.startsWith('http://') || url.startsWith('https://')) {
-          href = cleanUrl;
-        } else if (url.startsWith('www.')) {
-          href = `https://${cleanUrl}`;
-        } else {
-          // 도메인만 있는 경우 (예: naver.com)
-          href = `https://${cleanUrl}`;
-        }
-        a.href = href;
-        a.textContent = url;
-        a.target = '_blank';
-        a.rel = 'noopener noreferrer';
-        frag.appendChild(a);
-        lastIndex = start + url.length;
+      while ((match = hashtagRegex.exec(text)) !== null) {
+        matches.push({
+          type: 'hashtag',
+          start: match.index,
+          end: match.index + match[0].length,
+          content: match[0],
+          tag: match[1].toLowerCase()
+        });
       }
+      
+      // URL 매치 추가
+      while ((match = urlRegex.exec(text)) !== null) {
+        matches.push({
+          type: 'url',
+          start: match.index,
+          end: match.index + match[0].length,
+          content: match[0]
+        });
+      }
+      
+      // 위치 순으로 정렬
+      matches.sort((a, b) => a.start - b.start);
+      
+      // 겹치는 매치 제거 (URL이 우선)
+      const filteredMatches = [];
+      for (let i = 0; i < matches.length; i++) {
+        const current = matches[i];
+        let overlap = false;
+        for (let j = 0; j < filteredMatches.length; j++) {
+          const existing = filteredMatches[j];
+          // 겹치는 경우 URL이 우선
+          if (current.start < existing.end && current.end > existing.start) {
+            if (current.type === 'hashtag' && existing.type === 'url') {
+              overlap = true;
+              break;
+            } else if (current.type === 'url' && existing.type === 'hashtag') {
+              // URL이 해시태그보다 우선이므로 기존 해시태그 제거
+              filteredMatches.splice(j, 1);
+              break;
+            }
+          }
+        }
+        if (!overlap) {
+          filteredMatches.push(current);
+        }
+      }
+      
+      // 정렬된 매치를 순회하며 텍스트와 링크 생성
+      let lastIndex = 0;
+      for (const match of filteredMatches) {
+        if (match.start > lastIndex) {
+          frag.appendChild(document.createTextNode(text.slice(lastIndex, match.start)));
+        }
+        
+        if (match.type === 'hashtag') {
+          const a = document.createElement('a');
+          a.href = '#';
+          a.textContent = match.content;
+          a.className = 'hashtag-link';
+          a.style.color = '#0066cc';
+          a.style.cursor = 'pointer';
+          a.style.textDecoration = 'none';
+          a.addEventListener('click', function(e) {
+            e.preventDefault();
+            // 태그 필터링
+            if (selectedTag === match.tag) {
+              selectedTag = null; // 같은 태그 클릭 시 필터 해제
+            } else {
+              selectedTag = match.tag;
+            }
+            updateFilterInfo();
+            const notes = loadNotes();
+            renderList(notes);
+          });
+          frag.appendChild(a);
+        } else if (match.type === 'url') {
+          const url = match.content;
+          const a = document.createElement('a');
+          let href = url;
+          // URL 끝의 문장부호 제거
+          let cleanUrl = url.replace(/[.,;:!?)]+$/, '');
+          if (url.startsWith('http://') || url.startsWith('https://')) {
+            href = cleanUrl;
+          } else if (url.startsWith('www.')) {
+            href = `https://${cleanUrl}`;
+          } else {
+            href = `https://${cleanUrl}`;
+          }
+          a.href = href;
+          a.textContent = url;
+          a.target = '_blank';
+          a.rel = 'noopener noreferrer';
+          frag.appendChild(a);
+        }
+        
+        lastIndex = match.end;
+      }
+      
       if (lastIndex < text.length) {
         frag.appendChild(document.createTextNode(text.slice(lastIndex)));
       }
@@ -1857,14 +1963,7 @@
 
     function toggleSelect(id, checked) {
       if (checked) selectedIds.add(id); else selectedIds.delete(id);
-      // 단일 선택 시 타래 모드 활성화
-      if (selectedIds.size === 1 && checked) {
-        threadParentId = id;
-        updateThreadMode();
-      } else if (selectedIds.size !== 1) {
-        threadParentId = null;
-        updateThreadMode();
-      }
+      // 답글 모드는 입력 영역 클릭 시에만 활성화 (자동 활성화 제거)
       updateBulkState();
     }
 
@@ -1962,6 +2061,13 @@
       const value = (editDraft.get(id) ?? n.text).trim();
       if (!value) return;
       n.text = value;
+      // 해시태그 추출 및 업데이트
+      const tags = extractHashtags(value);
+      if (tags.length > 0) {
+        n.tags = tags;
+      } else {
+        delete n.tags;
+      }
       saveNotes(notes);
       editingIds.delete(id);
       editDraft.delete(id);
@@ -2354,15 +2460,7 @@
               }
             }
             
-            // 단일 선택 시 타래 모드 활성화
-            if (selectedIds.size === 1) {
-              const singleId = Array.from(selectedIds)[0];
-              threadParentId = singleId;
-              updateThreadMode();
-            } else {
-              threadParentId = null;
-              updateThreadMode();
-            }
+            // 답글 모드는 입력 영역 클릭 시에만 활성화 (자동 활성화 제거)
             
             updateBulkState();
             renderList(notes);
@@ -2533,6 +2631,9 @@
 
       const li = document.createElement('li');
       li.className = 'note-item';
+      if (note.isPinned) {
+        li.classList.add('note-pinned');
+      }
 
       const textEl = document.createElement('div');
       textEl.className = 'note-text';
@@ -2738,6 +2839,13 @@
         });
       }
       
+      // 태그 필터 적용
+      if (selectedTag) {
+        filtered = filtered.filter(n => {
+          return n.tags && n.tags.includes(selectedTag);
+        });
+      }
+      
       // 숨김 폴더 필터 적용: 기본적으로 숨김 폴더에 속한 메모는 제외
       // 단, 숨김 폴더가 선택되었을 때만 표시
       const hasHiddenFolder = selectedFolderIds.has(HIDDEN_FOLDER_ID);
@@ -2914,7 +3022,15 @@
       });
       
       // 타래가 있는 부모 글은 가장 최신 타래 시간 기준으로 정렬, 그 외는 부모 글 시간 기준
+      // 고정된 메모는 항상 상단에 표시
       const sorted = [...finalParentNotes].sort((a, b) => {
+        // 고정된 메모 우선 정렬
+        const aPinned = a.isPinned || false;
+        const bPinned = b.isPinned || false;
+        if (aPinned && !bPinned) return -1;
+        if (!aPinned && bPinned) return 1;
+        
+        // 둘 다 고정되었거나 둘 다 고정되지 않은 경우 시간 기준 정렬
         const aChildren = finalChildNotesMap.get(a.id) || [];
         const bChildren = finalChildNotesMap.get(b.id) || [];
         
@@ -3025,6 +3141,11 @@
       if (threadParentId) {
         note.parentId = threadParentId;
         // 타래 모드는 유지 (여러 글 작성 가능)
+      }
+      // 해시태그 추출 및 저장
+      const tags = extractHashtags(value);
+      if (tags.length > 0) {
+        note.tags = tags;
       }
       const notes = loadNotes();
       notes.push(note);
@@ -3184,6 +3305,16 @@
     // 이벤트
     submitBtn.addEventListener('click', onSubmit);
     input.addEventListener('input', function () { autosize(input); });
+    
+    // 입력 영역 클릭 시 선택된 메모가 하나 있으면 답글 모드 활성화
+    input.addEventListener('click', function() {
+      if (selectedIds.size === 1) {
+        const singleId = Array.from(selectedIds)[0];
+        threadParentId = singleId;
+        updateThreadMode();
+      }
+    });
+    
     input.addEventListener('keydown', function (e) {
       // Alt+Enter: 강제 줄바꿈
       if (e.key === 'Enter' && e.altKey) {
@@ -3537,8 +3668,9 @@
     function updateFilterInfo() {
       if (!filterInfoEl || !clearFilterBtn) return;
       const folders = loadFolders();
+      const filterInfoText = filterInfoEl.querySelector('.filter-info-text');
       
-      if (selectedDates.length > 0 || selectedFolderIds.size > 0) {
+      if (selectedDates.length > 0 || selectedFolderIds.size > 0 || selectedTag) {
         let messages = [];
         if (selectedDates.length > 0) {
           if (selectedDates.length === 1) {
@@ -3559,7 +3691,12 @@
             messages.push(selectedFolderNames.length + '개 폴더 표시 중');
           }
         }
-        filterInfoEl.textContent = messages.join(', ');
+        if (selectedTag) {
+          messages.push('#' + selectedTag + ' 메모만 표시 중');
+        }
+        if (filterInfoText) {
+          filterInfoText.textContent = messages.join(', ');
+        }
         filterInfoEl.classList.add('active');
         clearFilterBtn.style.display = 'block';
       } else {
@@ -3712,6 +3849,7 @@
         selectedDates = [];
         lastSelectedDate = null;
         selectedFolderIds.clear();
+        selectedTag = null;
         renderCalendar();
         renderFolders();
         renderList(loadNotes());

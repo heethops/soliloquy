@@ -365,7 +365,7 @@ html, body {
   -webkit-backdrop-filter: blur(10px);
   display: flex;
   gap: 10px;
-  align-items: flex-start;
+  align-items: flex-end;
 }
 
 /* 모바일에서 composer만 상단 고정 */
@@ -660,6 +660,10 @@ html, body {
   margin-right: auto;
 }
 
+.note-item.note-pinned {
+  background: #f5f5f5;
+}
+
 .note-select {
   position: absolute;
   left: -24px;
@@ -814,10 +818,28 @@ label.btn-icon {
   border-radius: 8px;
   font-size: 12px;
   display: none;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
 }
 
 .filter-info.active {
-  display: block;
+  display: flex;
+}
+
+.filter-info-text {
+  flex: 1;
+}
+
+.btn-clear-filter {
+  flex-shrink: 0;
+  padding: 4px 8px;
+  font-size: 11px;
+  background: #ffffff;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  cursor: pointer;
+  white-space: nowrap;
 }
 
 /* 달력 스타일 */
@@ -912,17 +934,6 @@ label.btn-icon {
   border-color: var(--accent-strong);
 }
 
-.btn-clear-filter {
-  width: 100%;
-  margin-top: 10px;
-  padding: 8px;
-  background: #f5f5f5;
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  font-size: 12px;
-  cursor: pointer;
-}
-
 .btn-clear-filter:hover {
   background: #e0e0e0;
 }
@@ -930,7 +941,7 @@ label.btn-icon {
 /* 투명 텍스트 모드 */
 .text-transparent .note-text { color: transparent !important; }
 .text-transparent .note-editor textarea { color: transparent !important; }
-.text-transparent #note-input { color: transparent !important; }
+.text-transparent #note-input { color: #d0d0d0 !important; }
 .text-transparent a { color: transparent !important; }
 .text-transparent .note-image { opacity: 0 !important; }
 .text-transparent .upload-preview img { opacity: 0 !important; }
@@ -1332,11 +1343,17 @@ label.btn-icon {
     grid-template-columns: 1fr !important;
   }
   /* 모바일에서 답글 표시기 텍스트가 화면 밖으로 나가지 않도록 */
+  .input-container {
+    max-width: 100% !important;
+    box-sizing: border-box !important;
+    overflow: hidden !important;
+  }
   .thread-indicator {
     max-width: 100% !important;
     width: 100% !important;
     box-sizing: border-box !important;
     overflow: hidden !important;
+    min-width: 0 !important;
   }
   .thread-indicator-text {
     min-width: 0 !important;
@@ -1345,9 +1362,11 @@ label.btn-icon {
     text-overflow: ellipsis !important;
     white-space: nowrap !important;
     word-break: break-all !important;
+    flex: 1 !important;
   }
   .thread-cancel-btn {
     flex-shrink: 0 !important;
+    white-space: nowrap !important;
   }
   /* 모바일에서 답글 메모 텍스트가 화면 밖으로 나가지 않도록 */
   .note-wrapper.thread-reply .note-item {

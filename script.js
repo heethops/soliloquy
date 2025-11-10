@@ -1975,15 +1975,6 @@
       const cancelThreadBtn = document.getElementById('cancel-thread');
       
       if (threadParentId) {
-        const notes = loadNotes();
-        const parentNote = notes.find(n => n.id === threadParentId);
-        if (!parentNote) {
-          // parentNote를 찾지 못하면 답글 모드 해제
-          threadParentId = null;
-        }
-      }
-      
-      if (threadParentId) {
         document.body.classList.add('thread-mode');
         if (input) {
           const notes = loadNotes();
@@ -1998,17 +1989,16 @@
             }
             if (threadIndicatorText) threadIndicatorText.textContent = `답글 작성 중: "${previewText}"`;
           } else {
-            // parentNote를 찾지 못하면 답글 모드 해제
-            threadParentId = null;
-            document.body.classList.remove('thread-mode');
-            if (input) {
-              input.placeholder = '여기에 글을 쓰세요...';
-            }
+            // parentNote를 찾지 못해도 답글 모드는 유지 (onSubmit에서 parentId 설정 가능하도록)
+            // 단, 표시할 텍스트가 없으므로 기본 메시지 표시
+            input.placeholder = '답글 작성 중...';
             if (threadIndicator) {
-          threadIndicator.style.display = 'none';
-          threadIndicator.classList.remove('show');
-          threadIndicator.style.setProperty('display', 'none', 'important');
-        }
+              threadIndicator.style.removeProperty('display');
+              threadIndicator.style.display = 'flex';
+              threadIndicator.classList.add('show');
+            }
+            if (threadIndicatorText) threadIndicatorText.textContent = '답글 작성 중...';
+            console.warn('⚠️ parentNote를 찾을 수 없지만 답글 모드는 유지:', threadParentId);
           }
         }
         // 취소 버튼 이벤트는 초기화 시 이미 등록됨
@@ -3128,6 +3118,33 @@
     async function onSubmit() {
       const value = (input.value || '').trim();
       
+      // threadParentId를 로컬 변수에 저장 (전송 과정에서 변경되지 않도록)
+      // thread-mode 클래스가 있으면 답글 모드로 인식 (threadParentId가 null이어도)
+      const isThreadMode = document.body.classList.contains('thread-mode');
+      let currentThreadParentId = threadParentId;
+      
+      // threadParentId가 null이지만 thread-mode 클래스가 있으면, 최근에 설정된 threadParentId를 찾기
+      if (!currentThreadParentId && isThreadMode) {
+        // thread-indicator의 텍스트에서 parentId를 추출하거나, selectedIds에서 찾기
+        if (selectedIds.size === 1) {
+          currentThreadParentId = Array.from(selectedIds)[0];
+          console.log('⚠️ threadParentId가 null이지만 thread-mode 클래스가 있음. selectedIds에서 복구:', currentThreadParentId);
+        }
+      }
+      
+      // 디버깅: threadParentId 확인
+      console.log('onSubmit 호출됨, threadParentId:', threadParentId, 'currentThreadParentId:', currentThreadParentId, 'isThreadMode:', isThreadMode);
+      
+      // threadParentId가 유효한지 확인
+      if (currentThreadParentId) {
+        const notes = loadNotes();
+        const parentNote = notes.find(n => n.id === currentThreadParentId);
+        console.log('parentNote 확인:', parentNote ? { id: parentNote.id, text: parentNote.text?.substring(0, 30) } : 'not found');
+        if (!parentNote) {
+          console.warn('⚠️ parentNote를 찾을 수 없음! threadParentId:', currentThreadParentId);
+        }
+      }
+      
       // 이미지가 로딩 중이면 완료될 때까지 대기 (모바일에서 이미지와 글을 같이 올릴 때 저장 안 되는 문제 해결)
       if (imageLoadingInProgress) {
         console.log('이미지 로딩 중... 대기합니다.');
@@ -3159,10 +3176,14 @@
         note.images = imagesToSave;
         console.log('이미지 포함 메모 저장:', imagesToSave.length, '개 이미지');
       }
-      // 타래 모드일 때 parentId 설정
-      if (threadParentId) {
-        note.parentId = threadParentId;
+      // 타래 모드일 때 parentId 설정 (로컬 변수 사용)
+      // threadParentId가 있으면 무조건 parentId 설정 (parentNote 존재 여부와 관계없이)
+      if (currentThreadParentId) {
+        note.parentId = String(currentThreadParentId); // 문자열로 변환하여 확실히 저장
+        console.log('✅ 답글 모드: parentId 설정됨', currentThreadParentId, 'note.parentId:', note.parentId);
         // 타래 모드는 유지 (여러 글 작성 가능)
+      } else {
+        console.log('❌ 답글 모드 아님: currentThreadParentId =', currentThreadParentId, 'threadParentId =', threadParentId);
       }
       // 해시태그 추출 및 저장
       const tags = extractHashtags(value);
@@ -3171,6 +3192,9 @@
       }
       const notes = loadNotes();
       notes.push(note);
+      
+      // 디버깅: 저장된 note 확인
+      console.log('저장된 note:', { id: note.id, text: note.text?.substring(0, 50), parentId: note.parentId, hasParentId: !!note.parentId });
       
       // 로컬 저장 먼저 (확실히 저장되도록)
       localStorage.setItem(STORAGE_KEY, JSON.stringify(notes));
@@ -3257,6 +3281,11 @@
           }
         })();
       }
+      
+      // 디버깅: 저장된 notes에서 방금 저장한 note 확인
+      const savedNotes = loadNotes();
+      const savedNote = savedNotes.find(n => n.id === note.id);
+      console.log('저장 후 확인 - savedNote:', savedNote ? { id: savedNote.id, parentId: savedNote.parentId, hasParentId: !!savedNote.parentId } : 'not found');
       
       renderList(notes);
       if (calendarEl) renderCalendar();
@@ -4565,5 +4594,6 @@
     setTimeout(init, 0);
   }
 })();
+
 
 

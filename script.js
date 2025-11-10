@@ -7,6 +7,7 @@
     const GITHUB_REPO_KEY = 'github_repo';
   const PROFILE_NAME_KEY = 'profile_name_v1';
   const BACKUP_KEY = 'backup_data_v1';
+  const THREAD_PARENT_ID_KEY = 'thread_parent_id_v1';
   const BOOKMARK_FOLDER_ID = '__bookmark_folder__';
   const PHOTO_FOLDER_ID = '__photo_folder__';
   const HIDDEN_FOLDER_ID = '__hidden_folder__';
@@ -1580,6 +1581,12 @@
         selectedIds.clear();
         selectedIds.add(note.id);
         threadParentId = note.id;
+        // localStorage에 저장 (모바일에서 복구용)
+        try {
+          localStorage.setItem(THREAD_PARENT_ID_KEY, threadParentId);
+        } catch (e) {
+          console.warn('threadParentId 저장 실패:', e);
+        }
         updateThreadMode();
         updateBulkState();
         hideNoteContextMenu();
@@ -1957,6 +1964,16 @@
 
     /** 타래 모드 상태 */
     let threadParentId = null;
+    // 페이지 로드 시 localStorage에서 threadParentId 복구 (모바일에서 답글 모드 유지)
+    try {
+      const savedThreadParentId = localStorage.getItem(THREAD_PARENT_ID_KEY);
+      if (savedThreadParentId) {
+        threadParentId = savedThreadParentId;
+        console.log('페이지 로드 시 threadParentId 복구:', threadParentId);
+      }
+    } catch (e) {
+      console.warn('localStorage 읽기 실패:', e);
+    }
     
     /** Shift 연속 선택을 위한 마지막 선택 인덱스 */
     let lastSelectedIndex = null;
@@ -2051,6 +2068,12 @@
         editingIds.clear();
         editDraft.clear();
         threadParentId = null;
+        // localStorage에서도 삭제
+        try {
+          localStorage.removeItem(THREAD_PARENT_ID_KEY);
+        } catch (e) {
+          console.warn('threadParentId 삭제 실패:', e);
+        }
         lastSelectedIndex = null; // Shift 선택 인덱스 초기화
         updateThreadMode();
       }
@@ -3129,17 +3152,34 @@
       
       // threadParentId가 null이지만 thread-mode 클래스가 있으면, 최근에 설정된 threadParentId를 찾기
       if (!currentThreadParentId && isThreadMode) {
-        // 1. thread-indicator의 data-parent-id에서 찾기 (가장 확실한 방법)
-        const threadIndicator = document.getElementById('thread-indicator');
-        if (threadIndicator && threadIndicator.dataset.parentId) {
-          currentThreadParentId = threadIndicator.dataset.parentId;
-          console.log('✅ thread-indicator data 속성에서 복구:', currentThreadParentId);
-        } else if (selectedIds.size === 1) {
-          // 2. selectedIds에서 찾기
+        // 1. localStorage에서 복구 (가장 확실한 방법)
+        try {
+          const savedThreadParentId = localStorage.getItem(THREAD_PARENT_ID_KEY);
+          if (savedThreadParentId) {
+            currentThreadParentId = savedThreadParentId;
+            console.log('✅ localStorage에서 복구:', currentThreadParentId);
+          }
+        } catch (e) {
+          console.warn('localStorage 읽기 실패:', e);
+        }
+        
+        // 2. thread-indicator의 data-parent-id에서 찾기
+        if (!currentThreadParentId) {
+          const threadIndicator = document.getElementById('thread-indicator');
+          if (threadIndicator && threadIndicator.dataset.parentId) {
+            currentThreadParentId = threadIndicator.dataset.parentId;
+            console.log('✅ thread-indicator data 속성에서 복구:', currentThreadParentId);
+          }
+        }
+        
+        // 3. selectedIds에서 찾기
+        if (!currentThreadParentId && selectedIds.size === 1) {
           currentThreadParentId = Array.from(selectedIds)[0];
-          console.log('⚠️ threadParentId가 null이지만 thread-mode 클래스가 있음. selectedIds에서 복구:', currentThreadParentId);
-        } else {
-          // 3. thread-indicator의 텍스트에서 parentId 추출 시도 (마지막 수단)
+          console.log('⚠️ selectedIds에서 복구:', currentThreadParentId);
+        }
+        
+        // 4. thread-indicator의 텍스트에서 parentId 추출 시도 (마지막 수단)
+        if (!currentThreadParentId) {
           const threadIndicatorText = document.querySelector('.thread-indicator-text');
           if (threadIndicatorText && threadIndicatorText.textContent) {
             // "답글 작성 중: "텍스트"" 형식에서 추출
@@ -3212,6 +3252,12 @@
         note.parentId = String(currentThreadParentId); // 문자열로 변환하여 확실히 저장
         console.log('✅ 답글 모드: parentId 설정됨', currentThreadParentId, 'note.parentId:', note.parentId);
         // 타래 모드는 유지 (여러 글 작성 가능)
+        // localStorage에도 저장 (다음 답글을 위해)
+        try {
+          localStorage.setItem(THREAD_PARENT_ID_KEY, currentThreadParentId);
+        } catch (e) {
+          console.warn('threadParentId 저장 실패:', e);
+        }
       } else {
         console.log('❌ 답글 모드 아님: currentThreadParentId =', currentThreadParentId, 'threadParentId =', threadParentId);
       }
@@ -3403,6 +3449,12 @@
         e.preventDefault();
         e.stopPropagation();
         threadParentId = null;
+        // localStorage에서도 삭제
+        try {
+          localStorage.removeItem(THREAD_PARENT_ID_KEY);
+        } catch (e) {
+          console.warn('threadParentId 삭제 실패:', e);
+        }
         selectedIds.clear();
         updateThreadMode();
         updateBulkState();
@@ -3413,6 +3465,12 @@
         e.preventDefault();
         e.stopPropagation();
         threadParentId = null;
+        // localStorage에서도 삭제
+        try {
+          localStorage.removeItem(THREAD_PARENT_ID_KEY);
+        } catch (e) {
+          console.warn('threadParentId 삭제 실패:', e);
+        }
         selectedIds.clear();
         updateThreadMode();
         updateBulkState();

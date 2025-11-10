@@ -4118,12 +4118,68 @@
     }
 
     if (folderAddBtn) {
+      let isAddingFolder = false; // 중복 클릭 방지 플래그
       folderAddBtn.addEventListener('click', function () {
+        // 이미 폴더 추가 중이면 무시
+        if (isAddingFolder) {
+          return;
+        }
+        
+        isAddingFolder = true;
+        
         // 폴더 모드가 꺼져있으면 켜기
         if (!folderMode) {
           setFolderMode(true);
         }
+        
+        // 이미 편집 중인 빈 폴더가 있으면 새로 추가하지 않음
+        if (editingFolderId) {
+          const folders = loadFolders();
+          const editingFolder = folders.find(f => f.id === editingFolderId);
+          if (editingFolder && !editingFolder.name) {
+            // 이미 빈 이름의 폴더가 편집 중이면 포커스만 이동
+            requestAnimationFrame(() => {
+              const folderItem = folderList?.querySelector(`[data-folder-id="${editingFolderId}"]`);
+              if (folderItem) {
+                folderItem.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+                const input = folderItem.querySelector('input');
+                if (input) {
+                  input.focus();
+                  input.select();
+                }
+              }
+              isAddingFolder = false;
+            });
+            return;
+          }
+        }
+        
         const folders = loadFolders();
+        
+        // 이미 빈 이름의 폴더가 있는지 확인
+        const emptyFolder = folders.find(f => !f.name || f.name.trim() === '');
+        if (emptyFolder && emptyFolder.id !== BOOKMARK_FOLDER_ID && emptyFolder.id !== PHOTO_FOLDER_ID && emptyFolder.id !== HIDDEN_FOLDER_ID) {
+          // 이미 빈 폴더가 있으면 그것을 편집 모드로 설정
+          editingFolderId = emptyFolder.id;
+          renderFolders();
+          requestAnimationFrame(() => {
+            requestAnimationFrame(() => {
+              const folderItem = folderList?.querySelector(`[data-folder-id="${emptyFolder.id}"]`);
+              if (folderItem) {
+                folderItem.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+                const input = folderItem.querySelector('input');
+                if (input) {
+                  input.focus();
+                  input.select();
+                }
+              }
+              isAddingFolder = false;
+            });
+          });
+          return;
+        }
+        
+        // 새 폴더 생성
         const newFolder = {
           id: generateId(),
           name: ''
@@ -4145,6 +4201,7 @@
                 input.select();
               }
             }
+            isAddingFolder = false;
           });
         });
       });

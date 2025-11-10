@@ -1991,7 +1991,11 @@
           if (parentNote) {
             const previewText = parentNote.text ? (parentNote.text.length > 50 ? parentNote.text.substring(0, 50) + '...' : parentNote.text) : '(이미지만)';
             input.placeholder = `"${previewText}"에 답글 작성...`;
-            if (threadIndicator) threadIndicator.style.display = 'flex';
+            if (threadIndicator) {
+              threadIndicator.style.removeProperty('display');
+              threadIndicator.style.display = 'flex';
+              threadIndicator.classList.add('show');
+            }
             if (threadIndicatorText) threadIndicatorText.textContent = `답글 작성 중: "${previewText}"`;
           } else {
             // parentNote를 찾지 못하면 답글 모드 해제
@@ -2000,7 +2004,11 @@
             if (input) {
               input.placeholder = '여기에 글을 쓰세요...';
             }
-            if (threadIndicator) threadIndicator.style.display = 'none';
+            if (threadIndicator) {
+          threadIndicator.style.display = 'none';
+          threadIndicator.classList.remove('show');
+          threadIndicator.style.setProperty('display', 'none', 'important');
+        }
           }
         }
         // 취소 버튼 이벤트는 초기화 시 이미 등록됨
@@ -2009,7 +2017,11 @@
         if (input) {
           input.placeholder = '여기에 글을 쓰세요...';
         }
-        if (threadIndicator) threadIndicator.style.display = 'none';
+        if (threadIndicator) {
+          threadIndicator.style.display = 'none';
+          threadIndicator.classList.remove('show');
+          threadIndicator.style.setProperty('display', 'none', 'important');
+        }
         if (threadIndicatorText) threadIndicatorText.textContent = '';
       }
     }
@@ -4348,7 +4360,14 @@
     renderList(localNotes);
     
     // 초기 렌더
-    // 답글 모드 초기화 (thread-indicator 숨김)
+    // 답글 모드 초기화 (thread-indicator 확실히 숨김)
+    threadParentId = null;
+    const threadIndicator = document.getElementById('thread-indicator');
+    if (threadIndicator) {
+      threadIndicator.style.display = 'none';
+      threadIndicator.classList.remove('show');
+      threadIndicator.style.setProperty('display', 'none', 'important');
+    }
     updateThreadMode();
     
     // Firebase 동기화 초기화 (새로고침 시 Firebase에서 데이터 가져오기)

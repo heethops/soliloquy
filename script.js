@@ -715,6 +715,11 @@
     function saveNotes(notes) {
       localStorage.setItem(STORAGE_KEY, JSON.stringify(notes));
       
+      // 상태 히스토리에 저장 (Undo/Redo용)
+      if (typeof saveStateToHistory === 'function') {
+        saveStateToHistory();
+      }
+      
       // Firebase 즉시 동기화
       if (isFirebaseEnabled() && !isSyncing) {
         syncToFirebase(notes).catch(err => {
@@ -841,6 +846,11 @@
     /** @param {Folder[]} folders */
     function saveFolders(folders, skipSync = false) {
       localStorage.setItem(FOLDERS_KEY, JSON.stringify(folders));
+      
+      // 상태 히스토리에 저장 (Undo/Redo용) - skipSync가 false일 때만
+      if (!skipSync) {
+        saveStateToHistory();
+      }
       
       // Firebase 즉시 동기화 (skipSync가 true이면 건너뛰기 - 무한 재귀 방지)
       // syncToFirebase가 notes와 folders를 함께 저장하므로 notes를 로드해서 동기화
@@ -1565,6 +1575,16 @@
       deleteBtn.addEventListener('click', function() {
         const notes = loadNotes();
         const filtered = notes.filter(n => n.id !== note.id);
+        // 삭제된 메모가 threadParentId인 경우 정리
+        if (threadParentId === note.id) {
+          threadParentId = null;
+          try {
+            localStorage.removeItem(THREAD_PARENT_ID_KEY);
+          } catch (e) {
+            console.warn('threadParentId 삭제 실패:', e);
+          }
+          updateThreadMode();
+        }
         saveNotes(filtered);
         renderList(filtered);
         hideNoteContextMenu();
@@ -1931,23 +1951,23 @@
           frag.appendChild(a);
         } else if (match.type === 'url') {
           const url = match.content;
-          const a = document.createElement('a');
-          let href = url;
+        const a = document.createElement('a');
+        let href = url;
           // URL 끝의 문장부호 제거
-          let cleanUrl = url.replace(/[.,;:!?)]+$/, '');
-          if (url.startsWith('http://') || url.startsWith('https://')) {
-            href = cleanUrl;
-          } else if (url.startsWith('www.')) {
-            href = `https://${cleanUrl}`;
-          } else {
-            href = `https://${cleanUrl}`;
-          }
-          a.href = href;
-          a.textContent = url;
-          a.target = '_blank';
-          a.rel = 'noopener noreferrer';
-          frag.appendChild(a);
+        let cleanUrl = url.replace(/[.,;:!?)]+$/, '');
+        if (url.startsWith('http://') || url.startsWith('https://')) {
+          href = cleanUrl;
+        } else if (url.startsWith('www.')) {
+          href = `https://${cleanUrl}`;
+        } else {
+          href = `https://${cleanUrl}`;
         }
+        a.href = href;
+        a.textContent = url;
+        a.target = '_blank';
+        a.rel = 'noopener noreferrer';
+        frag.appendChild(a);
+      }
         
         lastIndex = match.end;
       }
@@ -1968,15 +1988,27 @@
     try {
       const savedThreadParentId = localStorage.getItem(THREAD_PARENT_ID_KEY);
       if (savedThreadParentId) {
-        threadParentId = savedThreadParentId;
-        console.log('페이지 로드 시 threadParentId 복구:', threadParentId);
+        // 복구된 threadParentId가 실제로 존재하는 메모인지 확인
+        const notes = loadNotes();
+        const parentNote = notes.find(n => n.id === savedThreadParentId);
+        if (parentNote) {
+          threadParentId = savedThreadParentId;
+          console.log('페이지 로드 시 threadParentId 복구:', threadParentId);
+        } else {
+          // 존재하지 않는 메모면 localStorage에서 삭제
+          localStorage.removeItem(THREAD_PARENT_ID_KEY);
+          console.log('복구된 threadParentId가 존재하지 않아 삭제:', savedThreadParentId);
+        }
       }
     } catch (e) {
       console.warn('localStorage 읽기 실패:', e);
     }
     
-    /** Shift 연속 선택을 위한 마지막 선택 인덱스 */
-    let lastSelectedIndex = null;
+    /** Shift 연속 선택을 위한 마지막 선택 노트 ID */
+    let lastSelectedNoteId = null;
+    
+    /** renderList에서 생성된 정렬된 노트 ID 목록 (Shift 선택용) */
+    let sortedNoteIds = [];
 
     function toggleSelect(id, checked) {
       if (checked) selectedIds.add(id); else selectedIds.delete(id);
@@ -2074,7 +2106,7 @@
         } catch (e) {
           console.warn('threadParentId 삭제 실패:', e);
         }
-        lastSelectedIndex = null; // Shift 선택 인덱스 초기화
+        lastSelectedNoteId = null; // Shift 선택 노트 ID 초기화
         updateThreadMode();
       }
       renderList(loadNotes());
@@ -2322,346 +2354,69 @@
       const checkbox = document.createElement('input');
       checkbox.type = 'checkbox';
       checkbox.checked = selectedIds.has(note.id);
+      // wrapper에 노트 ID 저장 (DOM에서 인덱스 찾기용)
+      wrapper.dataset.noteId = note.id;
       checkbox.addEventListener('click', function (e) {
+        e.preventDefault();
+        e.stopPropagation();
+        
+        const clickedNoteId = note.id;
+        const wasSelected = selectedIds.has(clickedNoteId);
+        
         // Shift 클릭: 범위 선택
-        if (e.shiftKey && lastSelectedIndex !== null) {
-          e.preventDefault();
-          // 현재 필터링된 노트 목록 가져오기
-          const notes = loadNotes();
-          let filtered = notes;
+        if (e.shiftKey && lastSelectedNoteId && sortedNoteIds.length > 0) {
+          const lastIndex = sortedNoteIds.indexOf(lastSelectedNoteId);
+          const currentIndex = sortedNoteIds.indexOf(clickedNoteId);
           
-          // 날짜 필터 적용
-          if (selectedDates.length > 0) {
-            const selectedDateStrs = new Set(selectedDates.map(d => formatDate(d)));
-            filtered = filtered.filter(n => {
-              const noteDateStr = formatDate(new Date(n.createdAt));
-              return selectedDateStrs.has(noteDateStr);
-            });
-          }
-          
-          // 숨김 폴더 필터 적용: 기본적으로 숨김 폴더에 속한 메모는 제외
-          const hasHiddenFolder = selectedFolderIds.has(HIDDEN_FOLDER_ID);
-          if (!hasHiddenFolder) {
-            filtered = filtered.filter(n => {
-              if (!n.folderIds || n.folderIds.length === 0) {
-                return true;
-              }
-              return !n.folderIds.includes(HIDDEN_FOLDER_ID);
-            });
-          }
-          
-          // 폴더 필터 적용
-          if (selectedFolderIds.size > 0) {
-            const hasPhotoFolder = selectedFolderIds.has(PHOTO_FOLDER_ID);
-            const hasHiddenFolderSelected = selectedFolderIds.has(HIDDEN_FOLDER_ID);
-            const otherFolders = Array.from(selectedFolderIds).filter(id => 
-              id !== PHOTO_FOLDER_ID && id !== HIDDEN_FOLDER_ID
-            );
+          if (lastIndex !== -1 && currentIndex !== -1) {
+            const start = Math.min(lastIndex, currentIndex);
+            const end = Math.max(lastIndex, currentIndex);
             
-            // 숨김 폴더만 선택된 경우
-            if (hasHiddenFolderSelected && !hasPhotoFolder && otherFolders.length === 0) {
-              filtered = filtered.filter(n => {
-                return n.folderIds && n.folderIds.includes(HIDDEN_FOLDER_ID);
-              });
-            } else if (hasPhotoFolder && otherFolders.length === 0 && !hasHiddenFolderSelected) {
-              filtered = filtered.filter(n => {
-                const hasImages = (n.images && n.images.length > 0) || n.imageData;
-                return hasImages;
-              });
-            } else {
-              const allChildNotesMap = new Map();
-              filtered.forEach(n => {
-                if (n.parentId) {
-                  if (!allChildNotesMap.has(n.parentId)) {
-                    allChildNotesMap.set(n.parentId, []);
-                  }
-                  allChildNotesMap.get(n.parentId).push(n);
-                }
-              });
-              
-              const matchingNotes = new Set();
-              filtered.forEach(n => {
-                if (hasPhotoFolder) {
-                  const hasImages = (n.images && n.images.length > 0) || n.imageData;
-                  if (hasImages) {
-                    matchingNotes.add(n.id);
-                    if (n.parentId) matchingNotes.add(n.parentId);
-                    const children = allChildNotesMap.get(n.id) || [];
-                    children.forEach(child => matchingNotes.add(child.id));
-                  }
-                }
-                if (hasHiddenFolderSelected) {
-                  if (n.folderIds && n.folderIds.includes(HIDDEN_FOLDER_ID)) {
-                    matchingNotes.add(n.id);
-                    if (n.parentId) matchingNotes.add(n.parentId);
-                    const children = allChildNotesMap.get(n.id) || [];
-                    children.forEach(child => matchingNotes.add(child.id));
-                  }
-                }
-                if (n.folderIds && otherFolders.length > 0) {
-                  const hasMatchingFolder = otherFolders.some(folderId => n.folderIds.includes(folderId));
-                  if (hasMatchingFolder) {
-                    matchingNotes.add(n.id);
-                    if (n.parentId) matchingNotes.add(n.parentId);
-                    const children = allChildNotesMap.get(n.id) || [];
-                    children.forEach(child => matchingNotes.add(child.id));
-                  }
-                }
-              });
-              filtered = filtered.filter(n => matchingNotes.has(n.id));
-            }
-          }
-          
-          // 검색 필터 적용
-          if (searchQuery && searchQuery.trim() !== '') {
-            const q = searchQuery.trim().toLowerCase();
-            const allChildNotesMap = new Map();
-            notes.forEach(n => {
-              if (n.parentId) {
-                if (!allChildNotesMap.has(n.parentId)) {
-                  allChildNotesMap.set(n.parentId, []);
-                }
-                allChildNotesMap.get(n.parentId).push(n);
-              }
-            });
-            
-            const matchingNotes = new Set();
-            filtered.forEach(n => {
-              if ((n.text || '').toLowerCase().includes(q)) {
-                matchingNotes.add(n.id);
-                if (n.parentId) matchingNotes.add(n.parentId);
-                const children = allChildNotesMap.get(n.id) || [];
-                children.forEach(child => matchingNotes.add(child.id));
-              }
-            });
-            filtered = filtered.filter(n => matchingNotes.has(n.id));
-          }
-          
-          // 타래 구조 정리 후 부모 노트만 추출 (체크박스는 부모 노트에만 있음)
-          const finalParentNotes = filtered.filter(n => !n.parentId);
-          const finalChildNotesMap = new Map();
-          filtered.forEach(n => {
-            if (n.parentId) {
-              const parentExists = filtered.some(p => p.id === n.parentId);
-              if (parentExists) {
-                if (!finalChildNotesMap.has(n.parentId)) {
-                  finalChildNotesMap.set(n.parentId, []);
-                }
-                finalChildNotesMap.get(n.parentId).push(n);
-              }
-            }
-          });
-          
-          // 타래가 있는 부모 글은 가장 최신 타래 시간 기준으로 정렬
-          const sorted = [...finalParentNotes].sort((a, b) => {
-            const aChildren = finalChildNotesMap.get(a.id) || [];
-            const bChildren = finalChildNotesMap.get(b.id) || [];
-            
-            function getLatestThreadTime(parentId, map) {
-              const children = map.get(parentId) || [];
-              if (children.length === 0) return 0;
-              let latest = 0;
-              for (const child of children) {
-                const childTime = new Date(child.createdAt).getTime();
-                if (childTime > latest) latest = childTime;
-                const nestedLatest = getLatestThreadTime(child.id, map);
-                if (nestedLatest > latest) latest = nestedLatest;
-              }
-              return latest;
-            }
-            
-            const aLatestThread = getLatestThreadTime(a.id, finalChildNotesMap);
-            const bLatestThread = getLatestThreadTime(b.id, finalChildNotesMap);
-            
-            const aTime = aLatestThread > 0 ? aLatestThread : new Date(a.createdAt).getTime();
-            const bTime = bLatestThread > 0 ? bLatestThread : new Date(b.createdAt).getTime();
-            
-            return bTime - aTime;
-          });
-          
-          // 현재 노트의 인덱스 찾기
-          const currentIndex = sorted.findIndex(n => n.id === note.id);
-          
-          if (currentIndex !== -1) {
-            const start = Math.min(lastSelectedIndex, currentIndex);
-            const end = Math.max(lastSelectedIndex, currentIndex);
-            
-            // 범위 내 모든 노트 선택/해제 (첫 번째 선택 상태 기준)
-            const firstNote = sorted[lastSelectedIndex];
-            const shouldSelect = !selectedIds.has(firstNote.id);
-            
+            // 범위 내 모든 노트 ID 수집
+            const rangeNoteIds = [];
             for (let i = start; i <= end; i++) {
-              const rangeNote = sorted[i];
-              if (shouldSelect) {
-                selectedIds.add(rangeNote.id);
+              rangeNoteIds.push(sortedNoteIds[i]);
+            }
+            
+            // 마지막으로 선택한 노트의 선택 상태 확인 (클릭 전 상태)
+            const lastWasSelected = selectedIds.has(lastSelectedNoteId);
+            
+            // 범위 내 모든 노트를 마지막 선택 노트와 동일한 상태로 설정
+            // 단, 클릭한 노트는 반대 상태로 토글
+            rangeNoteIds.forEach(noteId => {
+              if (noteId === clickedNoteId) {
+                // 클릭한 노트는 토글
+                if (wasSelected) {
+                  selectedIds.delete(noteId);
+                } else {
+                  selectedIds.add(noteId);
+                }
               } else {
-                selectedIds.delete(rangeNote.id);
+                // 나머지 노트는 마지막 선택 노트와 동일한 상태로
+                if (lastWasSelected) {
+                  selectedIds.add(noteId);
+                } else {
+                  selectedIds.delete(noteId);
+                }
               }
-            }
+            });
             
-            // 답글 모드는 입력 영역 클릭 시에만 활성화 (자동 활성화 제거)
-            
+            lastSelectedNoteId = clickedNoteId;
             updateBulkState();
-            renderList(notes);
-            lastSelectedIndex = currentIndex;
-          }
-        } else {
-          // 일반 클릭: 단일 선택/해제
-          const checked = !selectedIds.has(note.id);
-          toggleSelect(note.id, checked);
-          
-          // 현재 필터링된 노트 목록에서 인덱스 찾기
-          const notes = loadNotes();
-          let filtered = notes;
-          
-          if (selectedDates.length > 0) {
-            const selectedDateStrs = new Set(selectedDates.map(d => formatDate(d)));
-            filtered = filtered.filter(n => {
-              const noteDateStr = formatDate(new Date(n.createdAt));
-              return selectedDateStrs.has(noteDateStr);
-            });
-          }
-          
-          // 숨김 폴더 필터 적용
-          const hasHiddenFolder = selectedFolderIds.has(HIDDEN_FOLDER_ID);
-          if (!hasHiddenFolder) {
-            filtered = filtered.filter(n => {
-              if (!n.folderIds || n.folderIds.length === 0) {
-                return true;
-              }
-              return !n.folderIds.includes(HIDDEN_FOLDER_ID);
-            });
-          }
-          
-          if (selectedFolderIds.size > 0) {
-            const hasPhotoFolder = selectedFolderIds.has(PHOTO_FOLDER_ID);
-            const hasHiddenFolderSelected = selectedFolderIds.has(HIDDEN_FOLDER_ID);
-            const otherFolders = Array.from(selectedFolderIds).filter(id => 
-              id !== PHOTO_FOLDER_ID && id !== HIDDEN_FOLDER_ID
-            );
-            
-            if (hasHiddenFolderSelected && !hasPhotoFolder && otherFolders.length === 0) {
-              filtered = filtered.filter(n => {
-                return n.folderIds && n.folderIds.includes(HIDDEN_FOLDER_ID);
-              });
-            } else if (hasPhotoFolder && otherFolders.length === 0 && !hasHiddenFolderSelected) {
-              filtered = filtered.filter(n => {
-                const hasImages = (n.images && n.images.length > 0) || n.imageData;
-                return hasImages;
-              });
-            } else {
-              const allChildNotesMap = new Map();
-              filtered.forEach(n => {
-                if (n.parentId) {
-                  if (!allChildNotesMap.has(n.parentId)) {
-                    allChildNotesMap.set(n.parentId, []);
-                  }
-                  allChildNotesMap.get(n.parentId).push(n);
-                }
-              });
-              
-              const matchingNotes = new Set();
-              filtered.forEach(n => {
-                if (hasPhotoFolder) {
-                  const hasImages = (n.images && n.images.length > 0) || n.imageData;
-                  if (hasImages) {
-                    matchingNotes.add(n.id);
-                    if (n.parentId) matchingNotes.add(n.parentId);
-                    const children = allChildNotesMap.get(n.id) || [];
-                    children.forEach(child => matchingNotes.add(child.id));
-                  }
-                }
-                if (hasHiddenFolderSelected) {
-                  if (n.folderIds && n.folderIds.includes(HIDDEN_FOLDER_ID)) {
-                    matchingNotes.add(n.id);
-                    if (n.parentId) matchingNotes.add(n.parentId);
-                    const children = allChildNotesMap.get(n.id) || [];
-                    children.forEach(child => matchingNotes.add(child.id));
-                  }
-                }
-                if (n.folderIds && otherFolders.length > 0) {
-                  const hasMatchingFolder = otherFolders.some(folderId => n.folderIds.includes(folderId));
-                  if (hasMatchingFolder) {
-                    matchingNotes.add(n.id);
-                    if (n.parentId) matchingNotes.add(n.parentId);
-                    const children = allChildNotesMap.get(n.id) || [];
-                    children.forEach(child => matchingNotes.add(child.id));
-                  }
-                }
-              });
-              filtered = filtered.filter(n => matchingNotes.has(n.id));
-            }
-          }
-          
-          if (searchQuery && searchQuery.trim() !== '') {
-            const q = searchQuery.trim().toLowerCase();
-            const allChildNotesMap = new Map();
-            notes.forEach(n => {
-              if (n.parentId) {
-                if (!allChildNotesMap.has(n.parentId)) {
-                  allChildNotesMap.set(n.parentId, []);
-                }
-                allChildNotesMap.get(n.parentId).push(n);
-              }
-            });
-            
-            const matchingNotes = new Set();
-            filtered.forEach(n => {
-              if ((n.text || '').toLowerCase().includes(q)) {
-                matchingNotes.add(n.id);
-                if (n.parentId) matchingNotes.add(n.parentId);
-                const children = allChildNotesMap.get(n.id) || [];
-                children.forEach(child => matchingNotes.add(child.id));
-              }
-            });
-            filtered = filtered.filter(n => matchingNotes.has(n.id));
-          }
-          
-          const finalParentNotes = filtered.filter(n => !n.parentId);
-          const finalChildNotesMap = new Map();
-          filtered.forEach(n => {
-            if (n.parentId) {
-              const parentExists = filtered.some(p => p.id === n.parentId);
-              if (parentExists) {
-                if (!finalChildNotesMap.has(n.parentId)) {
-                  finalChildNotesMap.set(n.parentId, []);
-                }
-                finalChildNotesMap.get(n.parentId).push(n);
-              }
-            }
-          });
-          
-          const sorted = [...finalParentNotes].sort((a, b) => {
-            const aChildren = finalChildNotesMap.get(a.id) || [];
-            const bChildren = finalChildNotesMap.get(b.id) || [];
-            
-            function getLatestThreadTime(parentId, map) {
-              const children = map.get(parentId) || [];
-              if (children.length === 0) return 0;
-              let latest = 0;
-              for (const child of children) {
-                const childTime = new Date(child.createdAt).getTime();
-                if (childTime > latest) latest = childTime;
-                const nestedLatest = getLatestThreadTime(child.id, map);
-                if (nestedLatest > latest) latest = nestedLatest;
-              }
-              return latest;
-            }
-            
-            const aLatestThread = getLatestThreadTime(a.id, finalChildNotesMap);
-            const bLatestThread = getLatestThreadTime(b.id, finalChildNotesMap);
-            
-            const aTime = aLatestThread > 0 ? aLatestThread : new Date(a.createdAt).getTime();
-            const bTime = bLatestThread > 0 ? bLatestThread : new Date(b.createdAt).getTime();
-            
-            return bTime - aTime;
-          });
-          
-          const currentIndex = sorted.findIndex(n => n.id === note.id);
-          if (currentIndex !== -1) {
-            lastSelectedIndex = currentIndex;
+            renderList(loadNotes());
+            return;
           }
         }
+        
+        // 일반 클릭: 단일 선택/해제
+        if (wasSelected) {
+          selectedIds.delete(clickedNoteId);
+        } else {
+          selectedIds.add(clickedNoteId);
+        }
+        lastSelectedNoteId = clickedNoteId;
+        updateBulkState();
+        renderList(loadNotes());
       });
       selWrap.appendChild(checkbox);
       
@@ -2993,10 +2748,10 @@
           // 부모가 현재 필터링된 결과에 있는지 확인
           const parentExists = filtered.some(p => p.id === n.parentId);
           if (parentExists) {
-            if (!allChildNotesMap.has(n.parentId)) {
-              allChildNotesMap.set(n.parentId, []);
-            }
-            allChildNotesMap.get(n.parentId).push(n);
+          if (!allChildNotesMap.has(n.parentId)) {
+            allChildNotesMap.set(n.parentId, []);
+          }
+          allChildNotesMap.get(n.parentId).push(n);
           }
         }
       });
@@ -3012,8 +2767,8 @@
             if (n.parentId) {
               const parentExists = filtered.some(p => p.id === n.parentId);
               if (parentExists) {
-                matchingNotes.add(n.parentId);
-              }
+              matchingNotes.add(n.parentId);
+            }
             }
             // 자식 글들도 포함 (자식이 현재 filtered에 있는 경우만)
             const children = allChildNotesMap.get(n.id) || [];
@@ -3133,6 +2888,21 @@
       
       // 한 번에 DOM에 추가 (성능 개선)
       list.appendChild(fragment);
+      
+      // 정렬된 노트 ID 목록 저장 (Shift 선택용) - renderList 순서와 동일
+      sortedNoteIds = [];
+      function collectNoteIdsRecursive(parentId) {
+        const children = finalChildNotesMap.get(parentId) || [];
+        const sortedChildren = [...children].sort((a, b) => new Date(a.createdAt) - new Date(b.createdAt));
+        for (const child of sortedChildren) {
+          sortedNoteIds.push(child.id);
+          collectNoteIdsRecursive(child.id);
+        }
+      }
+      for (const parent of sorted) {
+        sortedNoteIds.push(parent.id);
+        collectNoteIdsRecursive(parent.id);
+      }
       
       updateTotalNotesCount();
       updateFilterInfo();
@@ -3272,9 +3042,8 @@
       // 디버깅: 저장된 note 확인
       console.log('저장된 note:', { id: note.id, text: note.text?.substring(0, 50), parentId: note.parentId, hasParentId: !!note.parentId });
       
-      // 로컬 저장 먼저 (확실히 저장되도록)
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(notes));
-      updateTotalNotesCount();
+      // 로컬 저장 먼저 (확실히 저장되도록) - saveNotes()를 사용하여 히스토리도 저장
+      saveNotes(notes);
       console.log('로컬 저장 완료:', { text: value.substring(0, 50), images: imagesToSave.length });
       
       // Firebase 동기화 - 백그라운드에서 비동기 처리 (UI 블로킹 없음)
@@ -3333,7 +3102,7 @@
                 const noteIndex = notes.length - 1;
                 if (notes[noteIndex] && notes[noteIndex].images) {
                   notes[noteIndex].images = recompressedImages;
-                  localStorage.setItem(STORAGE_KEY, JSON.stringify(notes));
+                  saveNotes(notes);
                   
                   // 재압축 후 크기 확인
                   dataSize = JSON.stringify(notes).length;
@@ -3510,6 +3279,16 @@
 
     if (bulkDeleteBtn) {
       bulkDeleteBtn.addEventListener('click', function () {
+        // 삭제될 메모 중 threadParentId가 포함되어 있는지 확인
+        if (threadParentId && selectedIds.has(threadParentId)) {
+          threadParentId = null;
+          try {
+            localStorage.removeItem(THREAD_PARENT_ID_KEY);
+          } catch (e) {
+            console.warn('threadParentId 삭제 실패:', e);
+          }
+          updateThreadMode();
+        }
         const notes = loadNotes();
         if (selectedIds.size === 0) return;
         const next = notes.filter(n => !selectedIds.has(n.id));
@@ -3675,6 +3454,7 @@
       localStorage.removeItem(PROFILE_NAME_KEY);
       localStorage.removeItem('firebase_last_synced_data');
       localStorage.removeItem('firebase_last_updated');
+      localStorage.removeItem(THREAD_PARENT_ID_KEY);
       
       // Firebase에서도 데이터 삭제
       if (isFirebaseEnabled()) {
@@ -4472,19 +4252,161 @@
       });
     }
 
+    // 앱 내부 상태 히스토리 관리 (Undo/Redo)
+    const historyBackBtn = document.getElementById('history-back');
+    const historyForwardBtn = document.getElementById('history-forward');
+    
+    // 상태 히스토리 스택
+    let historyStack = [];
+    let currentHistoryIndex = -1;
+    let isRestoringState = false; // 상태 복원 중인지 여부 (무한 재귀 방지)
+    const MAX_HISTORY_SIZE = 50; // 최대 히스토리 개수
+    
+    // 현재 상태를 히스토리에 저장
+    function saveStateToHistory() {
+      if (isRestoringState) return; // 복원 중이면 저장하지 않음
+      
+      try {
+        const currentNotes = loadNotes();
+        const currentFolders = loadFolders();
+        
+        const state = {
+          notes: JSON.parse(JSON.stringify(currentNotes)), // 깊은 복사
+          folders: JSON.parse(JSON.stringify(currentFolders)), // 깊은 복사
+          timestamp: Date.now()
+        };
+        
+        // 현재 인덱스 이후의 히스토리 제거 (새로운 액션 발생 시)
+        if (currentHistoryIndex < historyStack.length - 1) {
+          historyStack = historyStack.slice(0, currentHistoryIndex + 1);
+        }
+        
+        // 히스토리에 추가
+        historyStack.push(state);
+        currentHistoryIndex = historyStack.length - 1;
+        
+        // 최대 크기 초과 시 오래된 항목 제거
+        if (historyStack.length > MAX_HISTORY_SIZE) {
+          historyStack.shift();
+          currentHistoryIndex = historyStack.length - 1;
+        }
+        
+        console.log('상태 저장됨:', {
+          stackLength: historyStack.length,
+          currentIndex: currentHistoryIndex,
+          notesCount: currentNotes.length
+        });
+        
+        updateHistoryButtons();
+      } catch (e) {
+        console.warn('상태 저장 실패:', e);
+      }
+    }
+    
+    // 이전 상태로 복원 (Undo)
+    function undo() {
+      if (currentHistoryIndex <= 0) return; // 더 이상 뒤로 갈 수 없음
+      
+      currentHistoryIndex--;
+      restoreState(historyStack[currentHistoryIndex]);
+    }
+    
+    // 다음 상태로 복원 (Redo)
+    function redo() {
+      if (currentHistoryIndex >= historyStack.length - 1) return; // 더 이상 앞으로 갈 수 없음
+      
+      currentHistoryIndex++;
+      restoreState(historyStack[currentHistoryIndex]);
+    }
+    
+    // 상태 복원
+    function restoreState(state) {
+      if (!state) return;
+      
+      isRestoringState = true; // 복원 중 플래그 설정
+      
+      try {
+        // 상태 복원
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(state.notes));
+        localStorage.setItem(FOLDERS_KEY, JSON.stringify(state.folders));
+        
+        // UI 업데이트
+        renderList(state.notes);
+        renderFolders();
+        if (calendarEl) renderCalendar();
+        updateTotalNotesCount();
+        
+        updateHistoryButtons();
+      } catch (e) {
+        console.error('상태 복원 실패:', e);
+      } finally {
+        isRestoringState = false; // 복원 완료
+      }
+    }
+    
+    // 히스토리 버튼 활성화/비활성화
+    function updateHistoryButtons() {
+      if (historyBackBtn) {
+        // 뒤로 가기: 현재 인덱스가 0보다 크면 활성화 (최소 2개 상태 필요)
+        historyBackBtn.disabled = currentHistoryIndex <= 0 || historyStack.length <= 1;
+      }
+      if (historyForwardBtn) {
+        // 앞으로 가기: 현재 인덱스가 마지막보다 작으면 활성화
+        historyForwardBtn.disabled = currentHistoryIndex >= historyStack.length - 1;
+      }
+      // 디버깅
+      console.log('히스토리 상태:', {
+        stackLength: historyStack.length,
+        currentIndex: currentHistoryIndex,
+        canUndo: currentHistoryIndex > 0 && historyStack.length > 1,
+        canRedo: currentHistoryIndex < historyStack.length - 1
+      });
+    }
+    
+    // 버튼 이벤트 리스너
+    if (historyBackBtn) {
+      historyBackBtn.addEventListener('click', function() {
+        undo();
+      });
+    }
+    
+    if (historyForwardBtn) {
+      historyForwardBtn.addEventListener('click', function() {
+        redo();
+      });
+    }
+    
+    // 초기 상태 저장 (페이지 로드 완료 후)
+    function initHistory() {
+      // 초기 상태 저장
+      saveStateToHistory();
+      // 버튼 상태 업데이트
+      updateHistoryButtons();
+    }
+    
+    // DOM 로드 완료 후 초기화
+    if (document.readyState === 'loading') {
+      document.addEventListener('DOMContentLoaded', initHistory);
+    } else {
+      // 이미 로드되었으면 즉시 실행
+      setTimeout(initHistory, 100);
+    }
+
     // 로컬 데이터 먼저 표시 (새로고침 속도 개선)
     const localNotes = loadNotes();
     renderList(localNotes);
     
     // 초기 렌더
-    // 답글 모드 초기화 (thread-indicator 확실히 숨김)
-    threadParentId = null;
-    const threadIndicator = document.getElementById('thread-indicator');
-    if (threadIndicator) {
-      threadIndicator.style.display = 'none';
-      threadIndicator.classList.remove('show');
-      threadIndicator.style.setProperty('display', 'none', 'important');
+    // 답글 모드 초기화 (localStorage에서 복구한 threadParentId가 없을 때만)
+    if (!threadParentId) {
+      const threadIndicator = document.getElementById('thread-indicator');
+      if (threadIndicator) {
+        threadIndicator.style.display = 'none';
+        threadIndicator.classList.remove('show');
+        threadIndicator.style.setProperty('display', 'none', 'important');
+      }
     }
+    // localStorage에서 복구한 threadParentId가 있으면 updateThreadMode 호출
     updateThreadMode();
     
     // Firebase 동기화 초기화 (새로고침 시 Firebase에서 데이터 가져오기)
@@ -4682,6 +4604,7 @@
     setTimeout(init, 0);
   }
 })();
+
 
 
 

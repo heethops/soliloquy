@@ -3585,8 +3585,91 @@
       });
     }
     document.addEventListener('keydown', function (e) {
+      // Ctrl/Cmd + F: 검색 입력 필드에 포커스
+      if ((e.ctrlKey || e.metaKey) && (e.key === 'f' || e.key === 'F')) {
+        // 입력 필드나 textarea에 포커스가 있으면 기본 동작 허용 (브라우저 검색)
+        const activeElement = document.activeElement;
+        if (activeElement && (activeElement.tagName === 'INPUT' || activeElement.tagName === 'TEXTAREA')) {
+          // 입력 필드에 포커스가 있으면 기본 동작 허용
+          return;
+        }
+        e.preventDefault();
+        if (searchInput) {
+          searchInput.focus();
+          searchInput.select();
+        }
+        return;
+      }
+      
+      // Ctrl/Cmd + S: 선택 모드 토글
+      if ((e.ctrlKey || e.metaKey) && (e.key === 's' || e.key === 'S')) {
+        // 입력 필드나 textarea에 포커스가 있으면 기본 동작 방지 (페이지 저장 방지)
+        const activeElement = document.activeElement;
+        if (activeElement && (activeElement.tagName === 'INPUT' || activeElement.tagName === 'TEXTAREA')) {
+          e.preventDefault();
+          // 선택 모드 토글
+          if (toggleSelectionBtn) {
+            setSelectionMode(!selectionMode);
+          }
+          return;
+        }
+        e.preventDefault();
+        if (toggleSelectionBtn) {
+          setSelectionMode(!selectionMode);
+        }
+        return;
+      }
+      
+      // Esc: 필터 해제 및 모달 닫기
       if (e.key === 'Escape') {
+        // 입력 필드에 포커스가 있으면 먼저 포커스 해제
+        const activeElement = document.activeElement;
+        if (activeElement && (activeElement.tagName === 'INPUT' || activeElement.tagName === 'TEXTAREA')) {
+          // 편집 모드가 아닌 경우에만 포커스 해제
+          if (!activeElement.classList.contains('editing')) {
+            activeElement.blur();
+          }
+        }
+        
+        // 이미지 모달 닫기
+        if (imageModal && imageModal.classList.contains('open')) {
         closeImageModal();
+          return;
+        }
+        
+        // 초기화 확인 모달 닫기
+        if (resetConfirmModal && resetConfirmModal.style.display === 'flex') {
+          resetConfirmModal.style.display = 'none';
+          return;
+        }
+        
+        // 노트 컨텍스트 메뉴 닫기
+        if (noteContextMenu && noteContextMenu.parentNode) {
+          hideNoteContextMenu();
+          return;
+        }
+        
+        // 프로필 이미지 메뉴 닫기
+        const profileImageMenu = document.getElementById('profile-image-menu');
+        if (profileImageMenu && profileImageMenu.classList.contains('show')) {
+          profileImageMenu.classList.remove('show');
+          return;
+        }
+        
+        // 필터 해제
+        if (clearFilterBtn && clearFilterBtn.style.display !== 'none') {
+          clearFilterBtn.click();
+          return;
+        }
+        
+        // 검색 입력 필드 비우기
+        if (searchInput && searchInput.value.trim() !== '') {
+          searchInput.value = '';
+          if (searchInput.dispatchEvent) {
+            searchInput.dispatchEvent(new Event('input', { bubbles: true }));
+          }
+          return;
+        }
       } else if (e.key === 'ArrowLeft' && imageModal && imageModal.classList.contains('open')) {
         showPrevImage();
       } else if (e.key === 'ArrowRight' && imageModal && imageModal.classList.contains('open')) {

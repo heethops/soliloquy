@@ -1986,6 +1986,8 @@
               threadIndicator.style.removeProperty('display');
               threadIndicator.style.display = 'flex';
               threadIndicator.classList.add('show');
+              // threadParentId를 data 속성에 저장 (복구용)
+              threadIndicator.dataset.parentId = threadParentId;
             }
             if (threadIndicatorText) threadIndicatorText.textContent = `답글 작성 중: "${previewText}"`;
           } else {
@@ -1996,6 +1998,8 @@
               threadIndicator.style.removeProperty('display');
               threadIndicator.style.display = 'flex';
               threadIndicator.classList.add('show');
+              // threadParentId를 data 속성에 저장 (복구용)
+              threadIndicator.dataset.parentId = threadParentId;
             }
             if (threadIndicatorText) threadIndicatorText.textContent = '답글 작성 중...';
             console.warn('⚠️ parentNote를 찾을 수 없지만 답글 모드는 유지:', threadParentId);
@@ -3125,10 +3129,36 @@
       
       // threadParentId가 null이지만 thread-mode 클래스가 있으면, 최근에 설정된 threadParentId를 찾기
       if (!currentThreadParentId && isThreadMode) {
-        // thread-indicator의 텍스트에서 parentId를 추출하거나, selectedIds에서 찾기
-        if (selectedIds.size === 1) {
+        // 1. thread-indicator의 data-parent-id에서 찾기 (가장 확실한 방법)
+        const threadIndicator = document.getElementById('thread-indicator');
+        if (threadIndicator && threadIndicator.dataset.parentId) {
+          currentThreadParentId = threadIndicator.dataset.parentId;
+          console.log('✅ thread-indicator data 속성에서 복구:', currentThreadParentId);
+        } else if (selectedIds.size === 1) {
+          // 2. selectedIds에서 찾기
           currentThreadParentId = Array.from(selectedIds)[0];
           console.log('⚠️ threadParentId가 null이지만 thread-mode 클래스가 있음. selectedIds에서 복구:', currentThreadParentId);
+        } else {
+          // 3. thread-indicator의 텍스트에서 parentId 추출 시도 (마지막 수단)
+          const threadIndicatorText = document.querySelector('.thread-indicator-text');
+          if (threadIndicatorText && threadIndicatorText.textContent) {
+            // "답글 작성 중: "텍스트"" 형식에서 추출
+            const text = threadIndicatorText.textContent;
+            const match = text.match(/답글 작성 중: "(.+?)"/);
+            if (match) {
+              const previewText = match[1];
+              // notes에서 previewText와 일치하는 메모 찾기
+              const notes = loadNotes();
+              const parentNote = notes.find(n => {
+                const noteText = n.text ? (n.text.length > 50 ? n.text.substring(0, 50) + '...' : n.text) : '(이미지만)';
+                return noteText === previewText || noteText.startsWith(previewText);
+              });
+              if (parentNote) {
+                currentThreadParentId = parentNote.id;
+                console.log('⚠️ thread-indicator 텍스트에서 복구:', currentThreadParentId);
+              }
+            }
+          }
         }
       }
       

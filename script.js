@@ -1975,6 +1975,15 @@
       const cancelThreadBtn = document.getElementById('cancel-thread');
       
       if (threadParentId) {
+        const notes = loadNotes();
+        const parentNote = notes.find(n => n.id === threadParentId);
+        if (!parentNote) {
+          // parentNote를 찾지 못하면 답글 모드 해제
+          threadParentId = null;
+        }
+      }
+      
+      if (threadParentId) {
         document.body.classList.add('thread-mode');
         if (input) {
           const notes = loadNotes();
@@ -1984,6 +1993,14 @@
             input.placeholder = `"${previewText}"에 답글 작성...`;
             if (threadIndicator) threadIndicator.style.display = 'flex';
             if (threadIndicatorText) threadIndicatorText.textContent = `답글 작성 중: "${previewText}"`;
+          } else {
+            // parentNote를 찾지 못하면 답글 모드 해제
+            threadParentId = null;
+            document.body.classList.remove('thread-mode');
+            if (input) {
+              input.placeholder = '여기에 글을 쓰세요...';
+            }
+            if (threadIndicator) threadIndicator.style.display = 'none';
           }
         }
         if (cancelThreadBtn) {
@@ -2001,6 +2018,7 @@
           input.placeholder = '여기에 글을 쓰세요...';
         }
         if (threadIndicator) threadIndicator.style.display = 'none';
+        if (threadIndicatorText) threadIndicatorText.textContent = '';
       }
     }
 
@@ -4314,6 +4332,8 @@
     renderList(localNotes);
     
     // 초기 렌더
+    // 답글 모드 초기화 (thread-indicator 숨김)
+    updateThreadMode();
     
     // Firebase 동기화 초기화 (새로고침 시 Firebase에서 데이터 가져오기)
     function initFirebaseSync() {

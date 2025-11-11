@@ -320,7 +320,7 @@
             // 품질을 낮춤
             if (quality > 0.1) {
               quality = Math.max(0.1, quality - 0.1);
-        } else {
+            } else {
               // 품질이 최저이면 크기를 줄임
               const ratio = Math.sqrt(maxSize / compressed.length) * 0.9; // 90%로 더 작게
               width = Math.max(100, Math.round(originalWidth * ratio));
@@ -384,9 +384,24 @@
           folders = [];
         }
         
+        // 휴지통 데이터도 함께 가져오기
+        let trash = [];
+        try {
+          const raw = localStorage.getItem(TRASH_KEY);
+          if (raw) {
+            const parsed = JSON.parse(raw);
+            if (Array.isArray(parsed)) {
+              trash = parsed;
+            }
+          }
+        } catch {
+          trash = [];
+        }
+        
         let profileData = {
           notes: notes,
           folders: folders,
+          trash: trash,
           profileBio: localStorage.getItem(PROFILE_BIO_KEY) || '',
           profileName: localStorage.getItem(PROFILE_NAME_KEY) || '',
           profileImage: localStorage.getItem(PROFILE_IMAGE_KEY) || '',
@@ -425,6 +440,7 @@
         console.log('Firebase에 데이터 저장 중...', {
           notes: notes.length,
           folders: folders.length,
+          trash: trash.length,
           dataSize: dataSizeKB + 'KB',
           hasImages: notes.some(n => n.images && n.images.length > 0)
         });
@@ -630,6 +646,18 @@
           renderFolders();
         }
 
+        // 휴지통 동기화
+        if (data.trash !== undefined) {
+          if (data.trash && Array.isArray(data.trash)) {
+            localStorage.setItem(TRASH_KEY, JSON.stringify(data.trash));
+            updateTrashButtonCount();
+          } else {
+            // 빈 배열이거나 null인 경우
+            localStorage.setItem(TRASH_KEY, JSON.stringify([]));
+            updateTrashButtonCount();
+          }
+        }
+
         // 최종 업데이트 시간 표시
         if (data.lastUpdated) {
           updateLastUpdatedTime(data.lastUpdated);
@@ -733,6 +761,14 @@
     function saveTrash(trash) {
       localStorage.setItem(TRASH_KEY, JSON.stringify(trash));
       updateTrashButtonCount();
+      
+      // Firebase 동기화
+      if (isFirebaseEnabled() && !isSyncing) {
+        const notes = loadNotes();
+        syncToFirebase(notes).catch(err => {
+          console.error('Firebase 휴지통 동기화 실패 (재시도 안 함):', err);
+        });
+      }
     }
 
     /** @param {Note[]} notes */
@@ -4353,7 +4389,7 @@
         
         // 이미 편집 중인 빈 폴더가 있으면 새로 추가하지 않음
         if (editingFolderId) {
-          const folders = loadFolders();
+        const folders = loadFolders();
           const editingFolder = folders.find(f => f.id === editingFolderId);
           if (editingFolder && !editingFolder.name) {
             // 이미 빈 이름의 폴더가 편집 중이면 포커스만 이동

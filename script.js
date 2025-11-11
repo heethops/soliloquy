@@ -8,6 +8,7 @@
   const PROFILE_NAME_KEY = 'profile_name_v1';
   const BACKUP_KEY = 'backup_data_v1';
   const THREAD_PARENT_ID_KEY = 'thread_parent_id_v1';
+  const TRASH_KEY = 'trash_notes_v1';
   const BOOKMARK_FOLDER_ID = '__bookmark_folder__';
   const PHOTO_FOLDER_ID = '__photo_folder__';
   const HIDDEN_FOLDER_ID = '__hidden_folder__';
@@ -52,6 +53,11 @@
     const toggleTransparencyBtn = document.getElementById('toggle-transparency');
     const toggleDateBtn = document.getElementById('toggle-date');
     const resetBtn = document.getElementById('reset-btn');
+    const trashBtn = document.getElementById('trash-btn');
+    const trashModal = document.getElementById('trash-modal');
+    const trashModalClose = document.getElementById('trash-modal-close');
+    const trashList = document.getElementById('trash-list');
+    const trashEmptyAll = document.getElementById('trash-empty-all');
     const restoreBtn = document.getElementById('restore-btn');
     const finalDeleteBtn = document.getElementById('final-delete-btn');
     const resetConfirmModal = document.getElementById('reset-confirm-modal');
@@ -709,6 +715,24 @@
       } catch {
         return [];
       }
+    }
+
+    function loadTrash() {
+      try {
+        const raw = localStorage.getItem(TRASH_KEY);
+        if (!raw) return [];
+        const parsed = JSON.parse(raw);
+        if (!Array.isArray(parsed)) return [];
+        return parsed;
+      } catch {
+        return [];
+      }
+    }
+
+    /** @param {Note[]} trash */
+    function saveTrash(trash) {
+      localStorage.setItem(TRASH_KEY, JSON.stringify(trash));
+      updateTrashButtonCount();
     }
 
     /** @param {Note[]} notes */
@@ -1574,7 +1598,10 @@
       deleteBtn.textContent = '삭제';
       deleteBtn.addEventListener('click', function() {
         const notes = loadNotes();
+        const trash = loadTrash();
         const filtered = notes.filter(n => n.id !== note.id);
+        // 휴지통으로 이동
+        trash.push(note);
         // 삭제된 메모가 threadParentId인 경우 정리
         if (threadParentId === note.id) {
           threadParentId = null;
@@ -1586,6 +1613,7 @@
           updateThreadMode();
         }
         saveNotes(filtered);
+        saveTrash(trash);
         renderList(filtered);
         hideNoteContextMenu();
       });
@@ -2093,6 +2121,10 @@
       if (bulkDeleteBtn) bulkDeleteBtn.disabled = selected === 0;
     }
 
+    function updateTrashButtonCount() {
+      // 휴지통 버튼 개수 표시 제거 (항상 "휴지통"만 표시)
+    }
+
     function updateTotalNotesCount() {
       if (!totalNotesCountEl) return;
       const total = loadNotes().length;
@@ -2457,6 +2489,13 @@
       const timeEl = document.createElement('time');
       timeEl.className = 'note-time';
       timeEl.dateTime = note.createdAt;
+      
+      // 북마크 폴더에 속한 메모인지 확인
+      const isBookmarked = note.folderIds && note.folderIds.includes(BOOKMARK_FOLDER_ID);
+      if (isBookmarked) {
+        timeEl.classList.add('note-time-bookmarked');
+      }
+      
       // 날짜 모드에 따라 표시 형식 변경
       timeEl.textContent = formatCompact(new Date(note.createdAt));
       
@@ -3328,9 +3367,14 @@
           updateThreadMode();
         }
         const notes = loadNotes();
+        const trash = loadTrash();
         if (selectedIds.size === 0) return;
+        // 선택된 메모들을 휴지통으로 이동
+        const toTrash = notes.filter(n => selectedIds.has(n.id));
+        trash.push(...toTrash);
         const next = notes.filter(n => !selectedIds.has(n.id));
         saveNotes(next);
+        saveTrash(trash);
         selectedIds.clear();
         renderList(next);
         if (calendarEl) renderCalendar();
@@ -3598,6 +3642,143 @@
 
     // 초기 버튼 상태 설정
     updateResetButtons();
+    updateTrashButtonCount();
+
+    // 휴지통 모달 관련 기능
+    function renderTrashList() {
+      if (!trashList) return;
+      const trash = loadTrash();
+      trashList.innerHTML = '';
+      
+      if (trash.length === 0) {
+        const emptyMsg = document.createElement('p');
+        emptyMsg.textContent = '휴지통이 비어있습니다.';
+        emptyMsg.style.textAlign = 'center';
+        emptyMsg.style.color = '#888';
+        emptyMsg.style.padding = '40px 20px';
+        trashList.appendChild(emptyMsg);
+        return;
+      }
+
+      // 최신순으로 정렬
+      const sorted = [...trash].sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+
+      sorted.forEach(note => {
+        const item = document.createElement('div');
+        item.className = 'trash-item';
+        
+        const content = document.createElement('div');
+        content.className = 'trash-item-content';
+        
+        const text = document.createElement('div');
+        text.className = 'trash-item-text';
+        text.textContent = note.text || '(내용 없음)';
+        
+        const time = document.createElement('div');
+        time.className = 'trash-item-time';
+        const date = new Date(note.createdAt);
+        time.textContent = formatCompact(date);
+        
+        content.appendChild(text);
+        content.appendChild(time);
+        
+        const actions = document.createElement('div');
+        actions.className = 'trash-item-actions';
+        
+        const restoreBtn = document.createElement('button');
+        restoreBtn.className = 'btn';
+        restoreBtn.textContent = '복원';
+        restoreBtn.addEventListener('click', function() {
+          restoreNoteFromTrash(note.id);
+        });
+        
+        const deleteBtn = document.createElement('button');
+        deleteBtn.className = 'btn btn-delete';
+        deleteBtn.textContent = '삭제';
+        deleteBtn.addEventListener('click', function() {
+          if (confirm('정말 영구적으로 삭제하시겠습니까?')) {
+            deleteNoteFromTrash(note.id);
+          }
+        });
+        
+        actions.appendChild(restoreBtn);
+        actions.appendChild(deleteBtn);
+        
+        item.appendChild(content);
+        item.appendChild(actions);
+        trashList.appendChild(item);
+      });
+    }
+
+    function restoreNoteFromTrash(noteId) {
+      const notes = loadNotes();
+      const trash = loadTrash();
+      const note = trash.find(n => n.id === noteId);
+      if (!note) return;
+      
+      // 휴지통에서 제거하고 notes에 추가
+      const filteredTrash = trash.filter(n => n.id !== noteId);
+      notes.push(note);
+      
+      saveNotes(notes);
+      saveTrash(filteredTrash);
+      renderTrashList();
+      renderList(notes);
+      if (calendarEl) renderCalendar();
+      showToast('메모가 복원되었습니다.');
+    }
+
+    function deleteNoteFromTrash(noteId) {
+      const trash = loadTrash();
+      const filtered = trash.filter(n => n.id !== noteId);
+      saveTrash(filtered);
+      renderTrashList();
+      showToast('메모가 영구적으로 삭제되었습니다.');
+    }
+
+    // 휴지통 버튼 클릭 시 모달 열기
+    if (trashBtn) {
+      trashBtn.addEventListener('click', function() {
+        if (trashModal) {
+          renderTrashList();
+          trashModal.style.display = 'flex';
+        }
+      });
+    }
+
+    // 휴지통 모달 닫기
+    if (trashModalClose) {
+      trashModalClose.addEventListener('click', function() {
+        if (trashModal) {
+          trashModal.style.display = 'none';
+        }
+      });
+    }
+
+    // 모달 외부 클릭 시 닫기
+    if (trashModal) {
+      trashModal.addEventListener('click', function(e) {
+        if (e.target === trashModal) {
+          trashModal.style.display = 'none';
+        }
+      });
+    }
+
+    // 모두 삭제 버튼
+    if (trashEmptyAll) {
+      trashEmptyAll.addEventListener('click', function() {
+        const trash = loadTrash();
+        if (trash.length === 0) {
+          showToast('휴지통이 이미 비어있습니다.');
+          return;
+        }
+        if (confirm(`정말 휴지통의 모든 메모(${trash.length}개)를 영구적으로 삭제하시겠습니까?`)) {
+          saveTrash([]);
+          renderTrashList();
+          showToast('모든 메모가 영구적으로 삭제되었습니다.');
+        }
+      });
+    }
 
     // 이미지 모달 닫기 이벤트
     if (imageModal) {
@@ -4626,6 +4807,7 @@
     // 1단계: 필수 UI 요소만 먼저 표시
     updateSearchIcon();
     updateTotalNotesCount();
+    updateTrashButtonCount();
     autosize(input);
     
     // 2단계: 다음 프레임에서 폴더와 프로필 렌더링

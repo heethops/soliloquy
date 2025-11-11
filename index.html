@@ -78,16 +78,19 @@
   <header class="main-header">
     <div id="last-updated" class="last-updated"></div>
     <div class="history-controls">
-      <button id="history-back" class="history-btn" type="button" aria-label="뒤로 가기" title="뒤로 가기">
-        <svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
-          <path d="M10 12L6 8L10 4" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
-        </svg>
-      </button>
-      <button id="history-forward" class="history-btn" type="button" aria-label="앞으로 가기" title="앞으로 가기">
-        <svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
-          <path d="M6 12L10 8L6 4" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
-        </svg>
-      </button>
+      <div class="history-buttons">
+        <button id="history-back" class="history-btn" type="button" aria-label="뒤로 가기" title="뒤로 가기">
+          <svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <path d="M10 12L6 8L10 4" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+          </svg>
+        </button>
+        <button id="history-forward" class="history-btn" type="button" aria-label="앞으로 가기" title="앞으로 가기">
+          <svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <path d="M6 12L10 8L6 4" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+          </svg>
+        </button>
+      </div>
+      <span id="total-notes-count" class="total-notes-count"></span>
     </div>
   </header>
   <!-- 모바일 전용 헤더 -->
@@ -172,10 +175,10 @@
         <div class="calendar-actions">
           <button id="toggle-transparency" class="btn" type="button">투명</button>
           <button id="toggle-date" class="btn" type="button">날짜</button>
+          <button id="trash-btn" class="btn" type="button">휴지통</button>
           <button id="reset-btn" class="btn" type="button">초기화</button>
           <button id="restore-btn" class="btn" type="button" style="display: none;">복원</button>
           <button id="final-delete-btn" class="btn btn-delete" type="button" style="display: none;">진짜끝</button>
-          <span id="total-notes-count" class="total-notes-count"></span>
         </div>
 
         <div class="bulk-actions" aria-label="일괄 작업">
@@ -222,20 +225,18 @@
     </div>
   </div>
 
-
-
-  <script src="script.js"></script>
-</body>
-</html>
-
-
-
-        <button id="reset-confirm-no" class="btn btn-cancel" type="button">아니요</button>
+  <div id="trash-modal" class="trash-modal" style="display: none;">
+    <div class="trash-modal-content">
+      <div class="trash-modal-header">
+        <h2>휴지통</h2>
+        <button id="trash-modal-close" class="trash-modal-close" type="button">×</button>
+      </div>
+      <div id="trash-list" class="trash-list"></div>
+      <div class="trash-modal-footer">
+        <button id="trash-empty-all" class="btn btn-delete" type="button">모두 삭제</button>
       </div>
     </div>
   </div>
-
-
 
   <script src="script.js"></script>
 </body>

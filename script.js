@@ -1628,10 +1628,26 @@
         const notes = loadNotes();
         const currentNote = notes.find(n => n.id === note.id);
         if (currentNote) {
-          currentNote.isPinned = !currentNote.isPinned;
+          const wasPinned = currentNote.isPinned || false;
+          
+          if (!wasPinned) {
+            // 새로운 메모를 고정하는 경우: 기존에 고정된 모든 메모 해제
+            notes.forEach(n => {
+              if (n.isPinned) {
+                n.isPinned = false;
+              }
+            });
+            // 현재 메모 고정
+            currentNote.isPinned = true;
+            showToast('메모가 고정되었습니다.');
+          } else {
+            // 고정 해제
+            currentNote.isPinned = false;
+            showToast('고정이 해제되었습니다.');
+          }
+          
           saveNotes(notes);
           renderList(notes);
-          showToast(currentNote.isPinned ? '메모가 고정되었습니다.' : '고정이 해제되었습니다.');
         }
         hideNoteContextMenu();
       });
@@ -2816,13 +2832,35 @@
       });
       
       // 타래가 있는 부모 글은 가장 최신 타래 시간 기준으로 정렬, 그 외는 부모 글 시간 기준
-      // 고정된 메모는 항상 상단에 표시
+      // 고정된 메모는 항상 상단에 표시 (부모 메모 또는 타래글 중 하나라도 고정되면)
       const sorted = [...finalParentNotes].sort((a, b) => {
-        // 고정된 메모 우선 정렬
-        const aPinned = a.isPinned || false;
-        const bPinned = b.isPinned || false;
-        if (aPinned && !bPinned) return -1;
-        if (!aPinned && bPinned) return 1;
+        // 고정된 메모/타래 확인 (재귀적으로)
+        function hasPinnedNote(noteId, map) {
+          // 부모 메모가 고정되었는지 확인
+          const parentNote = filtered.find(n => n.id === noteId);
+          if (parentNote && parentNote.isPinned) {
+            return true;
+          }
+          // 자식 타래 중 고정된 것이 있는지 확인
+          const children = map.get(noteId) || [];
+          for (const child of children) {
+            if (child.isPinned) {
+              return true;
+            }
+            // 중첩 타래 확인
+            if (hasPinnedNote(child.id, map)) {
+              return true;
+            }
+          }
+          return false;
+        }
+        
+        const aHasPinned = hasPinnedNote(a.id, finalChildNotesMap) || (a.isPinned || false);
+        const bHasPinned = hasPinnedNote(b.id, finalChildNotesMap) || (b.isPinned || false);
+        
+        // 고정된 메모/타래가 있는 메모 우선 정렬
+        if (aHasPinned && !bHasPinned) return -1;
+        if (!aHasPinned && bHasPinned) return 1;
         
         // 둘 다 고정되었거나 둘 다 고정되지 않은 경우 시간 기준 정렬
         const aChildren = finalChildNotesMap.get(a.id) || [];
